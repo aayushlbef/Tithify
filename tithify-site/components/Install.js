@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { Check, Copy, Terminal } from "lucide-react";
+import { basePath } from "@/lib/basePath";
 
 const OPTIONS = [
   {
@@ -15,6 +17,29 @@ const OPTIONS = [
     soon: true,
   },
 ];
+
+const easeOut = [0.16, 1, 0.3, 1];
+
+/* Windows Terminal icon: >_ prompt */
+function TerminalAppIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+      {/* > caret */}
+      <path d="M2.5 4.5L6.5 8l-4 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      {/* _ underscore cursor */}
+      <line x1="7.5" y1="11.5" x2="13" y2="11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/* PowerShell icon: filled right-chevron/arrow */
+function PowerShellIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="currentColor" aria-hidden="true">
+      <path d="M5 3l6 5-6 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+  );
+}
 
 export default function Install() {
   const [tab, setTab] = useState(0);
@@ -30,6 +55,8 @@ export default function Install() {
 
   return (
     <section id="install" className="relative bg-gradient-to-b from-[#f4f8ff] to-white pt-16 pb-20 md:pt-20 md:pb-28 overflow-hidden">
+
+      {/* Centered header + command block */}
       <div className="max-w-5xl mx-auto px-6 md:px-10 text-center">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -38,13 +65,13 @@ export default function Install() {
           transition={{ duration: 0.5 }}
         >
           <span className="text-sm font-semibold tracking-[0.18em] uppercase text-sapphire-600">
-            Two minutes to install
+            One command install
           </span>
           <h2 className="mt-3 md:mt-4 font-display text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight">
-            Pick your way in.
+            Up and running in seconds.
           </h2>
           <p className="mt-4 text-lg text-slate-600">
-            Command line, package manager, or a plain installer — whichever fits your setup.
+            No installer wizard. No admin rights. Just paste one command and Tithify sets itself up silently.
           </p>
         </motion.div>
 
@@ -89,28 +116,138 @@ export default function Install() {
           </div>
           {OPTIONS[tab].soon && (
             <p className="px-5 py-3 text-sm text-amber-500 font-medium border-t border-slate-800/80 bg-amber-500/5">
-              Winget support is coming soon — this command will work once the package is published.
+              Winget support is coming soon - this command will work once the package is published.
             </p>
           )}
         </motion.div>
+      </div>
 
-        <motion.p
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
+      {/* Two-column: steps left, laptop right */}
+      <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-6 md:px-10 mt-16 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-10">
+
+        {/* LEFT: steps */}
+        <motion.div
+          initial={{ opacity: 0, x: -24 }}
+          whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="mt-6 text-sm text-slate-500"
+          transition={{ duration: 0.6, ease: easeOut }}
+          className="relative z-[1]"
         >
-          Prefer a manual download? Grab{" "}
-          <a
-            href="https://github.com/aayushlbef/Tithify/releases/latest"
-            className="text-crimson font-semibold hover:underline focus-ring"
-          >
-            Tithify_Setup.exe
-          </a>{" "}
-          from the latest release. Unsigned builds may trigger a SmartScreen notice —
-          <span className="font-medium text-slate-700"> More Info → Run Anyway</span> gets you through.
-        </motion.p>
+          <p className="text-xs font-semibold tracking-[0.15em] uppercase text-sapphire-600 mb-6">
+            Step by step installation
+          </p>
+          <ol className="space-y-6">
+
+            <li className="flex gap-4">
+              <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-sapphire-600 text-white text-sm font-bold flex items-center justify-center shadow-md">
+                1
+              </span>
+              <div>
+                <p className="font-display font-bold text-slate-900 text-sm md:text-base">
+                  Open Terminal or PowerShell
+                </p>
+                <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+                  Search for{" "}
+                  <span className="inline-flex items-center gap-1.5 mx-0.5 px-2 py-0.5 rounded-md bg-[#1c1c1c] text-white text-xs font-medium">
+                    <TerminalAppIcon />
+                    Terminal
+                  </span>{" "}
+                  or{" "}
+                  <span className="inline-flex items-center gap-1.5 mx-0.5 px-2 py-0.5 rounded-md bg-[#012456] text-[#4ec9f0] text-xs font-medium">
+                    <PowerShellIcon />
+                    <span className="text-white">PowerShell</span>
+                  </span>{" "}
+                  on your PC and open it. No admin rights needed.
+                </p>
+              </div>
+            </li>
+
+            <li className="flex gap-4">
+              <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-sapphire-600 text-white text-sm font-bold flex items-center justify-center shadow-md">
+                2
+              </span>
+              <div>
+                <p className="font-display font-bold text-slate-900 text-sm md:text-base">
+                  Copy the command and paste it
+                </p>
+                <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+                  Copy the one-liner above, paste it into your terminal, and hit{" "}
+                  <kbd className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-300 text-slate-700 text-xs font-mono">
+                    Enter
+                  </kbd>
+                  .
+                </p>
+              </div>
+            </li>
+
+            <li className="flex gap-4">
+              <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-sapphire-600 text-white text-sm font-bold flex items-center justify-center shadow-md">
+                3
+              </span>
+              <div>
+                <p className="font-display font-bold text-slate-900 text-sm md:text-base">
+                  Wait a few seconds &mdash; you&apos;re done! 🎉
+                </p>
+                <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+                  Tithify downloads and installs silently &mdash; no wizard, no clicks.
+                  The Nepali date widget appears on your taskbar automatically.
+                </p>
+              </div>
+            </li>
+
+          </ol>
+
+          <p className="mt-8 text-sm text-slate-500">
+            Prefer a manual download? Grab{" "}
+            <a
+              href="https://github.com/aayushlbef/Tithify/releases/latest"
+              className="text-crimson font-semibold hover:underline focus-ring"
+            >
+              Tithify_Setup.exe
+            </a>{" "}
+            from the latest release. Unsigned builds may trigger a SmartScreen notice &mdash;
+            <span className="font-medium text-slate-700"> More Info &rarr; Run Anyway</span> gets you through.
+          </p>
+        </motion.div>
+
+        {/* RIGHT: laptop mockup */}
+        <motion.div
+          initial={{ opacity: 0, x: 36, scale: 0.97 }}
+          whileInView={{ opacity: 1, x: 0, scale: 1 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.85, delay: 0.08, ease: easeOut }}
+          whileHover={{ y: -6, scale: 1.01 }}
+          className="relative min-w-0 w-full flex items-center justify-center"
+        >
+          <div className="relative aspect-[3538/2208] w-full drop-shadow-2xl">
+            <div
+              className="absolute z-0 overflow-hidden bg-slate-950"
+              style={{ left: "11.8%", top: "4.5%", width: "75.8%", height: "74.0%" }}
+            >
+              <video
+                className="h-full w-full object-contain"
+                src={`${basePath}/Tithify%20Downloading%20Process.mp4`}
+                aria-label="Tithify download and install process"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+              >
+                Your browser does not support the product preview video.
+              </video>
+            </div>
+            <Image
+              src={`${basePath}/half%20cutout%20laptop.png`}
+              alt="Tithify running on a Windows laptop"
+              width={3538}
+              height={2208}
+              sizes="(min-width: 1024px) 50vw, 100vw"
+              className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-contain select-none"
+            />
+          </div>
+        </motion.div>
+
       </div>
     </section>
   );
