@@ -101,7 +101,7 @@ export default function Nav() {
         >
           <a href="#top" className="flex items-center gap-2 focus-ring">
             <Image
-              src={`${basePath}/logo-mark.png`}
+              src={`${basePath}/logo-mark.webp`}
               alt="Tithify logo"
               width={32}
               height={32}

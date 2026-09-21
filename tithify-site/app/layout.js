@@ -5,7 +5,7 @@ import { FAQS } from "@/lib/faqs";
 
 const sora = Sora({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["400", "600", "700", "800"],
   variable: "--font-display",
   display: "swap",
 });
@@ -19,7 +19,7 @@ const inter = Inter({
 
 const notoDevanagari = Noto_Sans_Devanagari({
   subsets: ["devanagari"],
-  weight: ["500", "600", "700"],
+  weight: ["500", "700"],
   variable: "--font-deva",
   display: "swap",
 });
@@ -29,12 +29,29 @@ const siteUrl = "https://tithify.guptaaayush.com.np";
 export const metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Tithify — Nepali Date Windows Taskbar Widget | Bikram Sambat Calendar",
-    template: "%s | Tithify — Nepali Date Widget",
+    default: "Nepali Date & Calendar Widget for Windows | Tithify (Bikram Sambat)",
+    template: "%s | Tithify — Nepali Date & Calendar Widget",
   },
   description:
-    "Download Tithify, the free, lightweight native Windows taskbar widget for Nepali Date (Bikram Sambat). Live BS calendar (1975–2100), public holidays, light/dark auto-theme, and 0% CPU idle usage.",
+    "Free Nepali Date Widget & Bikram Sambat Calendar Widget for Windows 11 and 10. Lightweight desktop widget with live BS date, Nepali calender holidays, and offline Patro.",
   keywords: [
+    "nepali date widget",
+    "nepali widget",
+    "nepali calendar",
+    "nepali calender",
+    "windows widget",
+    "nepali calendar widget",
+    "nepali calender widget",
+    "calender widget",
+    "calendar widget",
+    "windows calendar widget",
+    "nepali date widget for windows",
+    "nepali widget windows 11",
+    "nepali widget windows 10",
+    "nepali patro widget",
+    "desktop nepali calendar widget",
+    "bikram sambat widget",
+    "bikram sambat calendar widget",
     "Tithify",
     "Tithify official",
     "Tithify download",
@@ -45,12 +62,9 @@ export const metadata = {
     "Tithify calendar",
     "Tithify setup",
     "Tithify github",
-    "Nepali date widget",
     "Nepali date Windows taskbar",
     "Bikram Sambat Windows widget",
     "Nepali calendar for PC",
-    "Nepali calendar Windows 11",
-    "Nepali calendar Windows 10",
     "BS date taskbar widget",
     "Nepali Patro desktop app",
     "Nepali calendar taskbar",
@@ -90,9 +104,9 @@ export const metadata = {
     type: "website",
     url: siteUrl,
     siteName: "Tithify",
-    title: "Tithify — Official Site | Nepali Date Windows Taskbar Widget",
+    title: "Nepali Date & Calendar Widget for Windows | Tithify (Bikram Sambat)",
     description:
-      "Native Windows taskbar widget displaying real-time Bikram Sambat Nepali date. Features auto light/dark theme, offline BS calendar 1975–2100, zero CPU usage, and Nepali holidays.",
+      "Download Tithify, the free native Windows desktop widget displaying real-time Bikram Sambat (वि.सं.) Nepali date and calendar above your taskbar. 100% offline with zero CPU usage.",
     locale: "en_US",
     alternateLocale: ["ne_NP"],
     images: [
@@ -112,9 +126,9 @@ export const metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Tithify — Nepali Date Windows Taskbar Widget | Bikram Sambat Calendar",
+    title: "Nepali Date & Calendar Widget for Windows | Tithify (Bikram Sambat)",
     description:
-      "A lightweight, native Windows widget that shows the Bikram Sambat date above your taskbar. Auto light/dark theme, offline calendar, zero CPU.",
+      "Free native Windows widget that displays the live Bikram Sambat Nepali date and calendar above your taskbar. Auto light/dark theme, offline calendar, zero CPU.",
     creator: "@aayushlbef",
     images: [`${siteUrl}/desktop-widget-showcase.png`],
   },
@@ -155,9 +169,16 @@ const jsonLd = [
     "@type": "SoftwareApplication",
     name: "Tithify",
     alternateName: [
+      "Nepali Date Widget",
+      "Nepali Calendar Widget",
+      "Nepali Widget for Windows",
+      "Windows Calendar Widget",
+      "Nepali Calender Widget",
+      "Bikram Sambat Calendar Widget",
       "Tithify Nepali Date Widget",
       "Nepali Date Windows Taskbar Widget",
       "Bikram Sambat Windows Widget",
+      "नेपाली क्यालेन्डर विजेट",
       "नेपाली मिति विन्डोज विजेट",
       "वि.सं. क्यालेन्डर",
     ],
@@ -210,6 +231,9 @@ const jsonLd = [
     name: "Tithify",
     alternateName: [
       "Tithify",
+      "Nepali Date Widget",
+      "Nepali Calendar Widget",
+      "Nepali Widget for Windows",
       "Tithify Official",
       "Tithify App",
       "Tithify Widget",
@@ -273,10 +297,10 @@ export default function RootLayout({ children }) {
       <body>
         {children}
         <Script
-          strategy="afterInteractive"
+          strategy="lazyOnload"
           src="https://www.googletagmanager.com/gtag/js?id=G-2MZEHM7RY6"
         />
-        <Script id="google-analytics" strategy="afterInteractive">
+        <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}

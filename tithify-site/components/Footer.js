@@ -6,7 +6,7 @@ export default function Footer() {
     <footer className="bg-night-950 text-slate-400 py-14">
       <div className="max-w-7xl mx-auto px-6 md:px-10 flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-1.5">
-          <Image src={`${basePath}/logo-mark.png`} alt="Tithify logo" width={32} height={32} className="w-8 h-8" />
+          <Image src={`${basePath}/logo-mark.webp`} alt="Tithify logo" width={32} height={32} className="w-8 h-8" loading="lazy" />
           <span className="font-display font-bold text-white text-sm">Tithify — Nepali Date Widget</span>
         </div>
         <p className="text-xs text-slate-500 text-center">

@@ -76,13 +76,13 @@ export default function Features() {
           className="max-w-xl mb-10 md:mb-12"
         >
           <span className="text-sm font-semibold tracking-[0.18em] uppercase text-sapphire-600">
-            Built to disappear
+            Nepali Calendar &amp; Windows Widget Features
           </span>
           <h2 className="mt-3 md:mt-4 font-display text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight">
-            Every detail, considered.
+            Every detail of the Nepali widget, considered.
           </h2>
           <p className="mt-3 md:mt-4 text-lg text-slate-600 leading-relaxed">
-            The widget does one job — showing your date — and does it so quietly you'll forget it's software at all.
+            Designed as a native Windows desktop widget, Tithify shows your Bikram Sambat date and Nepali calendar quietly above your taskbar with zero distraction.
           </p>
         </motion.div>
 

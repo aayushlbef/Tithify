@@ -32,15 +32,15 @@ export default function CalendarShowcase() {
         >
           <span className="inline-flex items-center gap-2 text-sm font-semibold tracking-[0.18em] uppercase text-sapphire-600">
             <Sparkles className="w-3.5 h-3.5 text-crimson" />
-            Live Desktop Experience
+            Nepali Calendar Widget &amp; Desktop Patro
           </span>
           <h2 className="mt-4 font-display text-4xl font-extrabold tracking-tight text-slate-900 md:text-5xl">
-            Interactive Bikram Sambat Calendar,
+            Interactive Nepali Calendar Widget,
             <br />
-            right above your taskbar.
+            right above your Windows taskbar.
           </h2>
           <p className="mt-5 text-lg leading-relaxed text-slate-600">
-            Watch how effortlessly the widget integrates above your Windows taskbar. Seamless Bikram Sambat (वि.सं.) date visibility, Nepali public holidays, cultural events, and native desktop aesthetics.
+            Click this Windows widget to instantly open the interactive Bikram Sambat (वि.सं.) calendar. View Nepali government public holidays, festivals, and BS dates across 1975 to 2100 BS without opening a browser.
           </p>
 
           <div className="mt-8 space-y-5">
@@ -99,13 +99,13 @@ export default function CalendarShowcase() {
             </div>
 
             <Image
-              src={`${basePath}/half%20cutout%20laptop.png`}
+              src={`${basePath}/half-cutout-laptop.webp`}
               alt="Tithify full laptop preview"
-              width={3538}
-              height={2208}
+              width={1600}
+              height={998}
               sizes="(min-width: 1024px) 50vw, 100vw"
               className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-contain select-none"
-              priority
+              loading="lazy"
             />
           </div>
         </motion.div>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Image from "next/image";
-import { motion } from "framer-motion";
+import { motion, useInView, useReducedMotion } from "framer-motion";
 import { Check, Copy, Terminal } from "lucide-react";
 import { basePath } from "@/lib/basePath";
 
@@ -44,6 +44,9 @@ function PowerShellIcon() {
 export default function Install() {
   const [tab, setTab] = useState(0);
   const [copied, setCopied] = useState(false);
+  const sectionRef = useRef(null);
+  const isVisible = useInView(sectionRef, { amount: 0.15, once: true });
+  const prefersReducedMotion = useReducedMotion();
 
   const copy = async () => {
     try {
@@ -54,7 +57,7 @@ export default function Install() {
   };
 
   return (
-    <section id="install" className="relative bg-gradient-to-b from-[#f4f8ff] to-white pt-16 pb-20 md:pt-20 md:pb-28 overflow-hidden">
+    <section ref={sectionRef} id="install" className="relative bg-gradient-to-b from-[#f4f8ff] to-white pt-16 pb-20 md:pt-20 md:pb-28 overflow-hidden">
 
       {/* Centered header + command block */}
       <div className="max-w-5xl mx-auto px-6 md:px-10 text-center">
@@ -65,13 +68,13 @@ export default function Install() {
           transition={{ duration: 0.5 }}
         >
           <span className="text-sm font-semibold tracking-[0.18em] uppercase text-sapphire-600">
-            One command install
+            Download &amp; Install the Windows Widget
           </span>
           <h2 className="mt-3 md:mt-4 font-display text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight">
-            Up and running in seconds.
+            Get the Nepali Date Widget on Windows in seconds.
           </h2>
           <p className="mt-4 text-lg text-slate-600">
-            No installer wizard. No admin rights. Just paste one command and Tithify sets itself up silently.
+            No complex setup. No admin rights. Install the Tithify Nepali calendar widget with one PowerShell command or the official Windows installer.
           </p>
         </motion.div>
 
@@ -224,26 +227,30 @@ export default function Install() {
               className="absolute z-0 overflow-hidden bg-slate-950"
               style={{ left: "11.8%", top: "4.5%", width: "75.8%", height: "74.0%" }}
             >
-              <video
-                className="h-full w-full object-contain"
-                src={`${basePath}/Tithify%20Downloading%20Process.mp4`}
-                aria-label="Tithify download and install process"
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="metadata"
-              >
-                Your browser does not support the product preview video.
-              </video>
+              {isVisible && (
+                <video
+                  className="h-full w-full object-contain"
+                  src={`${basePath}/Tithify%20Downloading%20Process.mp4`}
+                  aria-label="Tithify download and install process"
+                  autoPlay={!prefersReducedMotion}
+                  controls={prefersReducedMotion}
+                  loop
+                  muted
+                  playsInline
+                  preload="metadata"
+                >
+                  Your browser does not support the product preview video.
+                </video>
+              )}
             </div>
             <Image
-              src={`${basePath}/half%20cutout%20laptop.png`}
+              src={`${basePath}/half-cutout-laptop.webp`}
               alt="Tithify running on a Windows laptop"
-              width={3538}
-              height={2208}
+              width={1600}
+              height={998}
               sizes="(min-width: 1024px) 50vw, 100vw"
               className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-contain select-none"
+              loading="lazy"
             />
           </div>
         </motion.div>

@@ -118,7 +118,7 @@ export default function Hero() {
             className="hidden [@media(min-height:700px)]:inline-flex w-fit items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium mb-8"
           >
             <motion.span style={{ backgroundColor: dotColor }} className="w-2 h-2 rounded-full" />
-            Windows 11 & 10 · Bikram Sambat (वि.सं.) · Native C++
+            Windows 11 & 10 · Nepali Date &amp; Calendar Widget · Native C++
           </motion.div>
 
           <div className="max-w-2xl">
@@ -133,12 +133,12 @@ export default function Hero() {
               </span>
               <br />
               <span className="text-3xl sm:text-4xl md:text-5xl font-bold opacity-90 block mt-2 text-slate-400">
-                Above Your Taskbar
+                &amp; Calendar for Windows
               </span>
             </motion.h1>
 
-            <motion.p style={{ color: bodyText }} className="mt-6 text-lg md:text-xl leading-relaxed max-w-lg">
-              Tithify is a lightweight native desktop widget that displays the real-time Bikram Sambat (वि.सं.) Nepali date and calendar on Windows. Automatic light/dark theme adaptation, 100% offline, and zero CPU usage.
+            <motion.p style={{ color: bodyText }} className="mt-6 text-lg md:text-xl leading-relaxed max-w-xl">
+              Tithify is the ultimate free <strong>Nepali date widget</strong> and <strong>Bikram Sambat (वि.सं.) calendar widget</strong> for Windows. A lightweight native Windows widget that displays real-time Nepali dates, public holidays, and offline BS calendar directly above your taskbar — with zero CPU idle cost.
             </motion.p>
 
             <div className="mt-9 flex flex-wrap items-center gap-6"> 
@@ -183,7 +183,7 @@ export default function Hero() {
           <div className="flex min-w-0 items-center">
             <div className="relative h-[4vh] w-full max-w-[11rem] overflow-hidden">
               <Image
-                src={`${basePath}/widiget_transparent_shot.png`}
+                src={`${basePath}/widiget_transparent_shot.webp`}
                 alt="Tithify Nepali Date widget preview"
                 fill
                 sizes="176px"
@@ -241,7 +241,7 @@ function seeded(i, mult) {
   return x - Math.floor(x);
 }
 
-const STARS = Array.from({ length: 60 }).map((_, i) => ({
+const STARS = Array.from({ length: 24 }).map((_, i) => ({
   top: `${seeded(i, 12.9898) * 55}%`,
   left: `${seeded(i, 78.233) * 100}%`,
   size: `${seeded(i, 45.164) * 2 + 1}px`,
