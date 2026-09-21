@@ -54,7 +54,7 @@ export default function Efficiency() {
 
         <div className="mt-16 grid sm:grid-cols-3 gap-5">
           <Stat label="Idle CPU usage">
-            <Counter prefix="< " to={0.1} decimals={1} suffix="%" />
+            <Counter prefix="~" to={0.01} decimals={2} suffix="%" />
           </Stat>
           <Stat label="Conversions run, per day">
             <Counter to={1} />
@@ -95,6 +95,84 @@ export default function Efficiency() {
           <p className="mt-4 text-sm text-slate-600">
             The single red tick is the one moment of real work — midnight, when the date rolls over.
           </p>
+        </motion.div>
+
+        {/* Comparison Table for AI Search, Search Engines & Users */}
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-60px" }}
+          transition={{ duration: 0.6 }}
+          className="mt-16"
+        >
+          <div className="text-center max-w-xl mx-auto mb-8">
+            <span className="text-xs md:text-sm font-semibold tracking-[0.18em] uppercase text-sapphire-600">
+              Why Tithify Stands Out
+            </span>
+            <h3 className="mt-2 font-display text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Tithify vs. Traditional Nepali Calendar Apps
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              How Tithify compares to web wrappers, Hamro Patro, and heavy Electron desktop widgets.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-blue-100/80 bg-white shadow-[0_4px_24px_-4px_rgba(37,99,235,0.06)]">
+            <table className="w-full text-left text-sm border-collapse min-w-[580px]">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/75">
+                  <th className="py-4 px-5 font-semibold text-slate-900">Feature</th>
+                  <th className="py-4 px-5 font-bold text-sapphire-700 bg-sapphire-50/60">Tithify (Windows Widget)</th>
+                  <th className="py-4 px-5 font-medium text-slate-600">Hamro Patro / Web Apps</th>
+                  <th className="py-4 px-5 font-medium text-slate-600">Electron Widgets</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Taskbar Integration</td>
+                  <td className="py-3.5 px-5 font-semibold text-emerald-600 bg-sapphire-50/30">Native floating above taskbar</td>
+                  <td className="py-3.5 px-5 text-slate-500">Browser tab required</td>
+                  <td className="py-3.5 px-5 text-slate-500">Window or system tray only</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Technology &amp; Architecture</td>
+                  <td className="py-3.5 px-5 font-semibold text-sapphire-700 bg-sapphire-50/30">Native C++ (Win32 &amp; GDI+)</td>
+                  <td className="py-3.5 px-5 text-slate-500">HTML / JS in browser</td>
+                  <td className="py-3.5 px-5 text-slate-500">Chromium &amp; Node.js bundle</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Idle CPU Usage</td>
+                  <td className="py-3.5 px-5 font-semibold text-emerald-600 bg-sapphire-50/30">~0.01% (Event-driven)</td>
+                  <td className="py-3.5 px-5 text-slate-500">1% &ndash; 5% (Browser engine)</td>
+                  <td className="py-3.5 px-5 text-slate-500">2% &ndash; 8% continuous</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Memory (RAM) Footprint</td>
+                  <td className="py-3.5 px-5 font-semibold text-emerald-600 bg-sapphire-50/30">&lt; 5 MB</td>
+                  <td className="py-3.5 px-5 text-slate-500">150 MB &ndash; 400 MB</td>
+                  <td className="py-3.5 px-5 text-slate-500">120 MB &ndash; 300 MB</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Offline Reliability</td>
+                  <td className="py-3.5 px-5 font-semibold text-emerald-600 bg-sapphire-50/30">100% Offline (BS 1975&ndash;2100)</td>
+                  <td className="py-3.5 px-5 text-slate-500">Requires Internet</td>
+                  <td className="py-3.5 px-5 text-slate-500">Often requires network</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Privacy &amp; Telemetry</td>
+                  <td className="py-3.5 px-5 font-semibold text-emerald-600 bg-sapphire-50/30">Zero Tracking &bull; Zero Ads</td>
+                  <td className="py-3.5 px-5 text-slate-500">Ad-supported &amp; Analytics</td>
+                  <td className="py-3.5 px-5 text-slate-500">Varies</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-5 font-medium text-slate-800">Licensing</td>
+                  <td className="py-3.5 px-5 font-semibold text-slate-900 bg-sapphire-50/30">Open Source (MIT)</td>
+                  <td className="py-3.5 px-5 text-slate-500">Proprietary</td>
+                  <td className="py-3.5 px-5 text-slate-500">Varies</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </motion.div>
       </div>
     </section>

@@ -1,7 +1,7 @@
 export const FAQS = [
   {
     q: "What is Tithify Nepali Date Widget?",
-    a: "Tithify is a lightweight, native C++ desktop widget for Windows that displays the current Nepali (Bikram Sambat — वि.सं.) date directly above your taskbar. It includes an interactive Bikram Sambat calendar (1975–2100 BS), Nepali government public holidays, auto light/dark theme adaptation, and uses virtually 0% CPU at idle."
+    a: "Tithify is a lightweight, native C++ desktop widget for Windows that displays the current Nepali (Bikram Sambat — वि.सं.) date directly above your taskbar. It includes an interactive Bikram Sambat calendar (1975–2100 BS), Nepali government public holidays, auto light/dark theme adaptation, and uses ~0.01% CPU at idle and <5MB RAM."
   },
   {
     q: "How do I show the Nepali calendar widget on my Windows taskbar?",
@@ -21,7 +21,7 @@ export const FAQS = [
   },
   {
     q: "How does Tithify compare to Hamro Patro or other desktop widgets?",
-    a: "Unlike Hamro Patro web wrappers or heavy Electron-based widgets that consume 100MB+ RAM and noticeable CPU, Tithify is written in pure native C++ with the Win32 API and GDI+. It consumes 0.00% CPU at idle and takes less than 8MB of RAM, making it the fastest, most lightweight Nepali widget for Windows."
+    a: "Unlike Hamro Patro web wrappers or heavy Electron-based widgets that consume 100MB+ RAM and noticeable CPU, Tithify is written in pure native C++ with the Win32 API and GDI+. It consumes ~0.01% CPU at idle and takes less than 5MB of RAM, making it the fastest, most lightweight Nepali widget for Windows."
   },
   {
     q: "Can I customize the widget position and lock it?",

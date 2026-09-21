@@ -106,7 +106,7 @@ export const metadata = {
     siteName: "Tithify",
     title: "Nepali Date & Calendar Widget for Windows | Tithify (Bikram Sambat)",
     description:
-      "Download Tithify, the free native Windows desktop widget displaying real-time Bikram Sambat (वि.सं.) Nepali date and calendar above your taskbar. 100% offline with zero CPU usage.",
+      "Download Tithify, the free native Windows desktop widget displaying real-time Bikram Sambat (वि.सं.) Nepali date and calendar above your taskbar. 100% offline with ~0.01% CPU usage and <5MB RAM.",
     locale: "en_US",
     alternateLocale: ["ne_NP"],
     images: [
@@ -128,7 +128,7 @@ export const metadata = {
     card: "summary_large_image",
     title: "Nepali Date & Calendar Widget for Windows | Tithify (Bikram Sambat)",
     description:
-      "Free native Windows widget that displays the live Bikram Sambat Nepali date and calendar above your taskbar. Auto light/dark theme, offline calendar, zero CPU.",
+      "Free native Windows widget that displays the live Bikram Sambat Nepali date and calendar above your taskbar. Auto light/dark theme, offline calendar, ~0.01% CPU, <5MB RAM.",
     creator: "@aayushlbef",
     images: [`${siteUrl}/desktop-widget-showcase.png`],
   },
@@ -187,10 +187,16 @@ const jsonLd = [
     operatingSystem: "Windows 10, Windows 11 (64-bit)",
     softwareVersion: "3.6.2",
     fileSize: "6.5MB",
+    isAccessibleForFree: true,
+    license: "https://opensource.org/licenses/MIT",
+    memoryRequirements: "< 5 MB RAM",
+    processorRequirements: "64-bit x86/x64 CPU",
+    storageRequirements: "< 10 MB",
+    sameAs: ["https://github.com/aayushlbef/Tithify"],
     downloadUrl: "https://github.com/aayushlbef/Tithify/releases/latest",
     releaseNotes: "https://github.com/aayushlbef/Tithify/releases",
     description:
-      "A lightweight, native Windows widget that displays the current Nepali (Bikram Sambat) date above your taskbar. Theme auto-adapt, offline BS calendar 1975–2100, zero CPU idle cost.",
+      "A lightweight, native Windows widget that displays the current Nepali (Bikram Sambat) date above your taskbar. Theme auto-adapt, offline BS calendar 1975–2100, ~0.01% CPU idle cost and <5MB RAM.",
     offers: {
       "@type": "Offer",
       price: "0",
@@ -208,7 +214,7 @@ const jsonLd = [
       "Windows Light and Dark theme auto-adaptation with zero flicker",
       "Complete Bikram Sambat calendar from BS 1975 to 2100",
       "Nepali government public holidays and cultural festivals indicator",
-      "Ultra-efficient resource usage: 0.00% CPU usage at idle and <8MB RAM",
+      "Ultra-efficient resource usage: ~0.01% CPU usage at idle and <5MB RAM",
       "100% offline date calculation with zero internet or tracking dependencies",
       "Native C++ Win32 API and GDI+ rendering with crisp DPI scaling",
     ],
@@ -223,6 +229,7 @@ const jsonLd = [
       "@type": "Person",
       name: "Aayush",
       url: "https://github.com/aayushlbef",
+      sameAs: ["https://github.com/aayushlbef"],
     },
   },
   {

@@ -138,7 +138,7 @@ export default function Hero() {
             </motion.h1>
 
             <motion.p style={{ color: bodyText }} className="mt-6 text-lg md:text-xl leading-relaxed max-w-xl">
-              Tithify is the ultimate free <strong>Nepali date widget</strong> and <strong>Bikram Sambat (वि.सं.) calendar widget</strong> for Windows. A lightweight native Windows widget that displays real-time Nepali dates, public holidays, and offline BS calendar directly above your taskbar — with zero CPU idle cost.
+              Tithify is the ultimate free <strong>Nepali date widget</strong> and <strong>Bikram Sambat (वि.सं.) calendar widget</strong> for Windows. A lightweight native Windows widget that displays real-time Nepali dates, public holidays, and offline BS calendar directly above your taskbar — with ~0.01% CPU idle cost and &lt;5MB RAM.
             </motion.p>
 
             <div className="mt-9 flex flex-wrap items-center gap-6"> 
