@@ -298,14 +298,14 @@ export default function RootLayout({ children }) {
         {children}
         <Script
           strategy="lazyOnload"
-          src="https://www.googletagmanager.com/gtag/js?id=G-2MZEHM7RY6"
+          src="https://www.googletagmanager.com/gtag/js?id=G-DVXR7Z30HF"
         />
         <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-            gtag('config', 'G-2MZEHM7RY6');
+            gtag('config', 'G-DVXR7Z30HF');
           `}
         </Script>
       </body>
