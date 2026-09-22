@@ -187,7 +187,7 @@ const jsonLd = [
     softwareVersion: "3.6.2",
     fileSize: "6.5MB",
     isAccessibleForFree: true,
-    license: "https://opensource.org/licenses/MIT",
+    license: "https://www.apache.org/licenses/LICENSE-2.0",
     memoryRequirements: "< 5 MB RAM",
     processorRequirements: "64-bit x86/x64 CPU",
     storageRequirements: "< 10 MB",

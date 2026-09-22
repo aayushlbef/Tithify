@@ -166,7 +166,7 @@ export default function Efficiency() {
                 </tr>
                 <tr>
                   <td className="py-3.5 px-5 font-medium text-slate-800">Licensing</td>
-                  <td className="py-3.5 px-5 font-semibold text-slate-900 bg-sapphire-50/30">Open Source (MIT)</td>
+                  <td className="py-3.5 px-5 font-semibold text-slate-900 bg-sapphire-50/30">Open Source (Apache-2.0)</td>
                   <td className="py-3.5 px-5 text-slate-500">Proprietary</td>
                   <td className="py-3.5 px-5 text-slate-500">Varies</td>
                 </tr>

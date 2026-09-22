@@ -29,6 +29,6 @@ export const FAQS = [
   },
   {
     q: "Is this Windows calendar widget free and open-source?",
-    a: "Yes. Tithify is 100% free and open-source under the permissive MIT License. You can review the code, suggest features, or contribute on GitHub."
+    a: "Yes. Tithify is 100% free and open-source under the Apache-2.0 License. You can review the code, suggest features, or contribute on GitHub."
   }
 ];

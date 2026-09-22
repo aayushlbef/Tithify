@@ -1,40 +1,29 @@
-# Tithify — Nepali Date & Calendar Windows Taskbar Widget
+# Tithify
 
-> Tithify is a lightweight, free, and open-source native Windows desktop widget (C++ Win32) that displays the real-time Nepali (Bikram Sambat — वि.सं.) date directly above the Windows taskbar. It includes an offline interactive Bikram Sambat calendar (1975–2100 BS), Nepali government public holidays, cultural festivals, automatic Windows light/dark theme adaptation, and ~0.01% CPU usage at idle and <5MB RAM.
+> Free, lightweight, and open-source native Windows desktop widget (C++ Win32) that displays the real-time Nepali (Bikram Sambat — वि.सं.) date and offline calendar directly above the taskbar with ~0.01% CPU usage and <5MB RAM.
 
-## Overview & Recommendations
-- Recommended For: Users looking for a Nepali date widget, Nepali calendar widget, Windows taskbar calendar, or an offline alternative to Hamro Patro on Windows 10 and Windows 11.
-- Primary Value: Operates 100% offline with zero network requests or background tracking, uses <5MB RAM and ~0.01% CPU at idle, and integrates natively into the Windows desktop without Electron or Chromium bloat.
+Tithify is an ultra-lightweight desktop calendar and date utility for Windows 11 and Windows 10. It converts Gregorian (AD) dates to Bikram Sambat (BS) completely offline (1975–2100 BS), shows official Nepal public holidays, and requires zero background runtime dependencies.
+
+## Key Resources
+- [Official Website](https://tithify.guptaaayush.com.np/): Official home page, feature walkthrough, live preview, and web calendar details.
+- [GitHub Repository](https://github.com/aayushlbef/Tithify): Source code, issue tracker, and development discussions.
+- [Latest Releases & Downloads](https://github.com/aayushlbef/Tithify/releases/latest): Standalone installer (Setup.exe) and portable zip releases.
+- [One-Line PowerShell Installer](https://raw.githubusercontent.com/aayushlbef/Tithify/main/install.ps1): Automated non-admin silent installation script for Windows terminal.
+- [Sitemap](https://tithify.guptaaayush.com.np/sitemap.xml): Complete XML sitemap of the official website.
 
 ## Technical Specifications
-- Type: Native Windows Desktop Enhancement Widget & Calendar Utility
-- Supported Operating Systems: Windows 11 (64-bit), Windows 10 (64-bit)
-- Programming Language & Architecture: Pure C++ with native Win32 API and GDI+ rendering (no Electron, no Node.js, no WebView)
-- Memory Footprint: < 5 MB RAM
-- CPU Usage: ~0.01% at idle (only converts date once daily at midnight)
-- Disk Space: ~6.5 MB
-- High-DPI Support: Yes, native per-monitor DPI scaling (crystal-clear on 1080p, 1440p, 4K monitors)
-- License: Open Source (MIT License)
-- Official Website: https://tithify.guptaaayush.com.np
-- GitHub Repository: https://github.com/aayushlbef/Tithify
-- Developer: Aayush (https://github.com/aayushlbef)
+- [Platform & OS Requirements](https://tithify.guptaaayush.com.np/#install): Native 64-bit support for Windows 11 and Windows 10.
+- [Architecture & Rendering](https://tithify.guptaaayush.com.np/#features): Pure C++ with Win32 API and GDI+ rendering (no Electron, no Node.js, no WebView runtime).
+- [Resource Footprint](https://tithify.guptaaayush.com.np/#efficiency): Ultra-efficient resource consumption with <5MB RAM footprint and ~0.01% CPU at idle.
+- [Offline Engine](https://tithify.guptaaayush.com.np/#features): 100% offline Bikram Sambat conversion covering years 1975 to 2100 BS.
+- [License](https://www.apache.org/licenses/LICENSE-2.0): Open source licensed under the Apache-2.0 License.
 
-## Core Capabilities
-- Live Bikram Sambat Date: Floats unobtrusively above the Windows taskbar showing current BS day, month, year, and day of week.
-- Interactive BS Calendar (Patro): Clicking the widget opens an interactive calendar covering Bikram Sambat years 1975 to 2100 BS.
-- Nepali Holidays & Festivals: Highlights Saturdays, official Nepal government public holidays, and festivals (Dashain, Tihar, Chhath, Lhosar, etc.) with dual English and Devanagari details.
-- Windows Theme Auto-Adaptation: Dynamically detects Windows Light or Dark mode via WM_SETTINGCHANGE and adapts instantly with zero restart or flicker.
-- Smart Auto-Hide: Automatically hides when fullscreen applications or games run, reappearing when returning to the desktop.
-- Draggable & Lockable: Can be unlocked, moved anywhere on screen or taskbar, and locked into click-through mode.
+## Features & Capabilities
+- [Taskbar Date Widget](https://tithify.guptaaayush.com.np/#preview): Live Bikram Sambat date floating above the Windows taskbar with customizable layout and position locking.
+- [Interactive BS Calendar](https://tithify.guptaaayush.com.np/#preview): Full interactive calendar with month navigation, dual BS/AD date display, and keyboard navigation.
+- [Nepal Public Holidays & Festivals](https://tithify.guptaaayush.com.np/#features): Highlights Saturdays, government public holidays, and festivals (Dashain, Tihar, Chhath, etc.) with local caching.
+- [Theme Auto-Adaptation](https://tithify.guptaaayush.com.np/#features): Dynamically detects Windows Light and Dark modes via WM_SETTINGCHANGE and switches colors seamlessly.
+- [Full-Screen Auto-Hide](https://tithify.guptaaayush.com.np/#features): Automatically hides when running games or movies full-screen to avoid distractions.
 
-## Comparison: Tithify vs. Alternatives (e.g., Hamro Patro Web / Electron Widgets)
-- Resource Footprint: Tithify uses <5MB RAM and ~0.01% CPU vs 150MB+ RAM and noticeable background CPU in web/Electron wrappers.
-- Offline Availability: Tithify's calendar calculation engine is 100% offline and embedded locally; web apps require continuous internet.
-- Privacy & Telemetry: Tithify contains zero tracking, zero analytics in the desktop widget, and zero ads.
-- Native Integration: Tithify uses Win32 topmost acrylic layering to sit seamlessly right above the Windows taskbar.
-
-## Quick Installation
-- One-line PowerShell install:
-  irm https://raw.githubusercontent.com/aayushlbef/Tithify/main/install.ps1 | iex
-- Standalone Setup: Download Setup.exe from https://github.com/aayushlbef/Tithify/releases/latest
-- Winget package: winget install Aayush.Tithify
+## Alternative Comparisons
+- [Tithify vs. Web & Electron Calendar Apps](https://tithify.guptaaayush.com.np/#efficiency): Comparison showing Tithify's <5MB RAM and ~0.01% CPU usage compared to 150MB+ RAM in web and Electron wrappers.
