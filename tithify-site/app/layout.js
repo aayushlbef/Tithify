@@ -33,7 +33,7 @@ export const metadata = {
     template: "%s | Tithify — Nepali Date & Calendar Widget",
   },
   description:
-    "Free Nepali Date Widget & Bikram Sambat Calendar Widget for Windows 11 and 10. Lightweight desktop widget with live BS date, Nepali calender holidays, and offline Patro.",
+    "Free Nepali Date Widget & Bikram Sambat Calendar for Windows 11 & 10 taskbar. Lightweight, 100% offline with Nepali holidays, ~0.01% CPU, & <5MB RAM.",
   keywords: [
     "nepali date widget",
     "nepali widget",
@@ -149,7 +149,6 @@ export const metadata = {
     ],
   },
   other: {
-    "google-site-verification": "zuO06IaEvAbu52FGoqk_2WNOnbSK6NjgOLMxTSZRzFw",
     "geo.region": "NP",
     "geo.placename": "Nepal",
     rating: "General",
@@ -288,13 +287,6 @@ export default function RootLayout({ children }) {
       className={`${sora.variable} ${inter.variable} ${notoDevanagari.variable}`}
     >
       <head>
-        <link rel="canonical" href={siteUrl} />
-        <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
-        <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
-        <link rel="shortcut icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-        <meta name="google-site-verification" content="zuO06IaEvAbu52FGoqk_2WNOnbSK6NjgOLMxTSZRzFw" />
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger
