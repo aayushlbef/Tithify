@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 
 PackageIdentifier: Aayush.Tithify
-PackageVersion: 3.6.3
+PackageVersion: 3.6.4
 PackageLocale: en-US
 Publisher: Aayush
 PublisherUrl: https://github.com/aayushlbef
@@ -26,6 +26,6 @@ Tags:
   - calendar
   - taskbar
   - nepal
-ReleaseNotesUrl: https://github.com/aayushlbef/Tithify/releases/tag/v3.6.3
+ReleaseNotesUrl: https://github.com/aayushlbef/Tithify/releases/tag/v3.6.4
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

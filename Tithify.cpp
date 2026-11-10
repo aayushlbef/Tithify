@@ -12,19 +12,22 @@
 #include <stdio.h>
 #include <shlobj.h>
 #include <commdlg.h>
+#include <cmath>
+#include <mmsystem.h>
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "winhttp.lib")
+#pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "comdlg32.lib")
 
 using namespace Gdiplus;
 
 // ── App Version ──────────────────────────────────────────────────────────────
-#define APP_VERSION L"3.6.3"
+#define APP_VERSION L"3.6.4"
 #define GITHUB_REPO_API L"/repos/aayushlbef/Tithify/releases/latest"
 #define GITHUB_RELEASE_URL L"https://github.com/aayushlbef/Tithify/releases/tag/"
 #define WM_UPDATE_AVAILABLE      (WM_USER + 2)
@@ -40,6 +43,13 @@ ULONG_PTR g_gdiplusToken;
 HWND g_hWnd = NULL;
 extern HWND g_hCalWnd;
 extern bool g_isCalendarOpen;
+extern HWND g_hReminderWnd;
+extern bool g_isReminderDashboardOpen;
+extern HWND g_hAlarmAlertWnd;
+extern bool g_isAlarmAlertOpen;
+extern HWND g_hDatePopupWnd;
+extern bool g_isDatePopupOpen;
+void CloseCalendarDatePopup();
 bool g_setupMode = true;
 int g_xPos = 500, g_yPos = 1000;
 POINT g_dragStart = { 0, 0 };
@@ -53,6 +63,7 @@ float g_dpiScale = 1.0f;
 bool g_hiddenForFullscreen = false;
 bool g_hiddenForTaskbar = false;
 bool g_isOnTaskbar = true;
+bool g_zIndexDesktop = false;
 int g_currentShiftX = 0;
 int g_currentShiftY = 0;
 
@@ -64,7 +75,11 @@ int g_bgOpacity = 200;             // Opacity level (0..255)
 // ── Custom Menu State ────────────────────────────────────────────────────────
 HWND g_hMenuWnd = NULL;
 int g_menuXPos = 0, g_menuYPos = 0;
+int g_menuBaseXPos = 0;   // original x before flyout shifts it
 int g_menuHoverIndex = -1;
+bool g_bgFlyoutOpen  = false;   // is BG colour flyout visible?
+int  g_bgFlyoutHover = -1;      // hovered swatch 0-7, or 8 = slider
+bool g_bgSliderDrag  = false;   // opacity slider being dragged
 
 // ── Theme Detection ──────────────────────────────────────────────────────────
 bool g_isLightTheme = false;   // true = Windows light theme, false = dark
@@ -370,7 +385,8 @@ bool IsFullscreenAppRunning() {
         return false;
 
     // Ignore our own widget windows
-    if (hForeground == g_hWnd || hForeground == g_hCalWnd || hForeground == g_hMenuWnd)
+    if (hForeground == g_hWnd || hForeground == g_hCalWnd || hForeground == g_hMenuWnd ||
+        hForeground == g_hReminderWnd || hForeground == g_hAlarmAlertWnd || hForeground == g_hDatePopupWnd)
         return false;
 
     // Ignore transparent / click-through overlay windows (e.g. snipping tool overlay)
@@ -468,7 +484,18 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
         ShowWindow(g_hWnd, SW_RESTORE);
     }
     if (!g_isMenuOpen && !g_isCalendarOpen) {
-        if (g_setupMode || g_isOnTaskbar) {
+        bool keepOnTop = (g_setupMode || g_isOnTaskbar || g_zIndexDesktop);
+        if (keepOnTop) {
+            if (g_isOnTaskbar) {
+                HWND hTaskbar = FindWindowW(L"Shell_TrayWnd", NULL);
+                if (hTaskbar && (HWND)GetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT) != hTaskbar) {
+                    SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, (LONG_PTR)hTaskbar);
+                }
+            } else {
+                if ((HWND)GetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT) != NULL) {
+                    SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, 0);
+                }
+            }
             SetWindowPos(g_hWnd, HWND_TOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
         } else {
@@ -641,24 +668,29 @@ void UpdateWidgetMode() {
     HWND hTaskbar = FindWindowW(L"Shell_TrayWnd", NULL);
     HWND hDesktop = GetDesktopHostWindow();
 
+    bool keepOnTop = (g_setupMode || g_isOnTaskbar || g_zIndexDesktop);
+
     if (g_isOnTaskbar) {
         if (hTaskbar) SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, (LONG_PTR)hTaskbar);
         else SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, 0);
     } else {
-        if (hDesktop) SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, (LONG_PTR)hDesktop);
-        else SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, 0);
+        if (!keepOnTop && hDesktop) {
+            SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, (LONG_PTR)hDesktop);
+        } else {
+            SetWindowLongPtr(g_hWnd, GWLP_HWNDPARENT, 0);
+        }
     }
 
     LONG_PTR exStyle = GetWindowLongPtr(g_hWnd, GWL_EXSTYLE);
-    if (g_setupMode || g_isOnTaskbar) {
-        // Setup mode (unlocked for dragging) or taskbar mode: keep TOPMOST
+    if (keepOnTop) {
+        // Setup mode (unlocked for dragging), taskbar mode, or desktop with z-index enabled: keep TOPMOST
         if (!(exStyle & WS_EX_TOPMOST)) {
             SetWindowLongPtr(g_hWnd, GWL_EXSTYLE, exStyle | WS_EX_TOPMOST);
         }
         SetWindowPos(g_hWnd, HWND_TOPMOST, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
     } else {
-        // Locked on desktop: behave like a desktop icon (bottom of window stack)
+        // Locked on desktop without z-index: behave like a desktop icon (bottom of window stack)
         if (exStyle & WS_EX_TOPMOST) {
             SetWindowLongPtr(g_hWnd, GWL_EXSTYLE, exStyle & ~WS_EX_TOPMOST);
         }
@@ -700,9 +732,9 @@ void LoadConfig() {
         file = fopen(nLegacy.c_str(), "r");
     }
     if (file) {
-        int x, y, setup, showDay = 1, bgPreset = 0, opacity = 200;
+        int x, y, setup, showDay = 1, bgPreset = 0, opacity = 200, zIndex = 0;
         unsigned int colorVal = (unsigned int)RGB(31, 31, 31);
-        int n = fscanf(file, "%d,%d,%d,%d,%u,%d,%d", &x, &y, &setup, &showDay, &colorVal, &opacity, &bgPreset);
+        int n = fscanf(file, "%d,%d,%d,%d,%u,%d,%d,%d", &x, &y, &setup, &showDay, &colorVal, &opacity, &bgPreset, &zIndex);
         if (n >= 3) {
             g_xPos = x;
             g_yPos = y;
@@ -711,6 +743,7 @@ void LoadConfig() {
             if (n >= 5) g_bgColorRGB = (COLORREF)colorVal;
             if (n >= 6) g_bgOpacity = opacity;
             if (n >= 7) g_bgPresetMode = bgPreset;
+            if (n >= 8) g_zIndexDesktop = (zIndex != 0);
         }
         fclose(file);
     }
@@ -721,9 +754,10 @@ void SaveConfig() {
     std::string npath(path.begin(), path.end());
     FILE* file = fopen(npath.c_str(), "w");
     if (file) {
-        fprintf(file, "%d,%d,%d,%d,%u,%d,%d",
+        fprintf(file, "%d,%d,%d,%d,%u,%d,%d,%d",
                 g_xPos, g_yPos, g_setupMode ? 1 : 0, g_showDay ? 1 : 0,
-                (unsigned int)g_bgColorRGB, g_bgOpacity, g_bgPresetMode);
+                (unsigned int)g_bgColorRGB, g_bgOpacity, g_bgPresetMode,
+                g_zIndexDesktop ? 1 : 0);
         fclose(file);
     }
 }
@@ -1139,14 +1173,14 @@ DWORD WINAPI FetchHolidaysThread(LPVOID lpParam) {
     bool downloaded = false;
 
     // 1. Try primary GitHub raw URL
-    std::wstring path1 = L"/aayushlbef/Tithify/main/data/holidays_" + std::to_wstring(bsYear) + L".json";
+    std::wstring path1 = L"/aayushlbef/tithify-public/main/data/holidays_" + std::to_wstring(bsYear) + L".json";
     if (HttpDownloadString(L"raw.githubusercontent.com", path1.c_str(), jsonBody)) {
         downloaded = true;
     }
 
     // 2. Try secondary jsDelivr CDN
     if (!downloaded) {
-        std::wstring path2 = L"/gh/aayushlbef/Tithify@main/data/holidays_" + std::to_wstring(bsYear) + L".json";
+        std::wstring path2 = L"/gh/aayushlbef/tithify-public@main/data/holidays_" + std::to_wstring(bsYear) + L".json";
         if (HttpDownloadString(L"cdn.jsdelivr.net", path2.c_str(), jsonBody)) {
             downloaded = true;
         }
@@ -1374,6 +1408,48 @@ std::wstring GetNepaliDateString() {
     return s_cachedDateStr;
 }
 
+// ── Tithi (Lunar Day) Calculation ────────────────────────────────────────────
+// Returns the tithi index (0-29) for a given Gregorian date.
+// Tithi 0-14 = Shukla Pratipada..Purnima, 15-29 = Krishna Pratipada..Amavasya.
+static int CalcTithiIndex(int adYear, int adMonth, int adDay) {
+    // Compute Julian Day Number at noon UTC for the given Gregorian date
+    int a = (14 - adMonth) / 12;
+    int y = adYear + 4800 - a;
+    int m = adMonth + 12 * a - 3;
+    double jd = adDay + (153 * m + 2) / 5 + 365.0 * y + y / 4 - y / 100 + y / 400 - 32045.0;
+    // Hindu tithi is determined at sunrise (~6 AM Nepal time = 12:15 AM UTC).
+    // Subtract 0.49 days to shift from noon UTC to Nepal sunrise.
+    jd -= 0.49;
+    // Reference: new moon (Amavasya) on 2000-01-06 at 18:14 UTC = JD ~2451550.26
+    // Synodic month = 29.53058867 days
+    double synodicMonth = 29.53058867;
+    double newMoonRef = 2451550.26;
+    double daysSinceNew = fmod(jd - newMoonRef, synodicMonth);
+    if (daysSinceNew < 0) daysSinceNew += synodicMonth;
+    // Each tithi spans synodicMonth/30 days. Index 0 = Shukla Pratipada.
+    int tithiIdx = (int)(daysSinceNew / (synodicMonth / 30.0));
+    if (tithiIdx < 0) tithiIdx = 0;
+    if (tithiIdx > 29) tithiIdx = 29;
+    return tithiIdx;
+}
+
+static std::wstring GetTithiString(int adYear, int adMonth, int adDay) {
+    static const wchar_t* tithiNames[] = {
+        L"Pratipada", L"Dwitiya",    L"Tritiya",    L"Chaturthi",
+        L"Panchami",  L"Shashthi",   L"Saptami",    L"Ashtami",
+        L"Navami",    L"Dashami",    L"Ekadashi",   L"Dwadashi",
+        L"Trayodashi",L"Chaturdashi",L"Purnima",    // Shukla 1–15
+        L"Pratipada", L"Dwitiya",    L"Tritiya",    L"Chaturthi",
+        L"Panchami",  L"Shashthi",   L"Saptami",    L"Ashtami",
+        L"Navami",    L"Dashami",    L"Ekadashi",   L"Dwadashi",
+        L"Trayodashi",L"Chaturdashi",L"Amavasya"    // Krishna 1–15
+    };
+    int idx = CalcTithiIndex(adYear, adMonth, adDay);
+    bool isKrishna = (idx >= 15);
+    const wchar_t* paksha = isKrishna ? L"Krishna" : L"Shukla";
+    return std::wstring(paksha) + L": " + tithiNames[idx];
+}
+
 // ── Shared Drawing Helpers ───────────────────────────────────────────────────
 void AddRoundedRectangle(GraphicsPath& path, REAL x, REAL y, REAL w, REAL h, REAL r) {
     REAL d = r * 2.0f;
@@ -1455,6 +1531,1579 @@ void DrawIconButton(Graphics& graphics, const RectF& rect, const wchar_t* text, 
     graphics.DrawString(text, -1, &font, rect, &format, &textBrush);
 }
 
+// ── Custom Reminder & Event Engine ───────────────────────────────────────────
+struct CustomReminder {
+    int id;               // unique timestamp id
+    int bsYear;           // BS Year (e.g. 2082)
+    int bsMonth;          // 1..12
+    int bsDay;            // 1..32
+    std::wstring title;   // Event title / name
+    std::wstring desc;    // Description / details
+    bool hasAlarm;        // Sound alarm enabled
+    int alarmHour;        // 0..23 (24h)
+    int alarmMinute;      // 0..59
+    bool isAllDay;        // All-day event
+    bool isTriggered;     // Already alerted
+};
+
+std::vector<CustomReminder> g_customReminders;
+bool g_isReminderDashboardOpen = false;
+HWND g_hReminderWnd = NULL;
+RECT g_rcReminderDashboard = { 0, 0, 0, 0 };
+
+bool g_isAlarmAlertOpen = false;
+HWND g_hAlarmAlertWnd = NULL;
+RECT g_rcAlarmAlert = { 0, 0, 0, 0 };
+bool g_isAlarmSoundPlaying = false;
+HANDLE g_hAlarmThread = NULL;
+CustomReminder g_activeAlertReminder;
+
+extern NOTIFYICONDATAW g_nid;
+void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrideY = -1);
+
+std::wstring GetRemindersFilePath() {
+    wchar_t appDataPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath))) {
+        std::wstring dir = std::wstring(appDataPath) + L"\\Tithify";
+        CreateDirectoryW(dir.c_str(), NULL);
+        return dir + L"\\reminders.dat";
+    }
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(NULL, path, MAX_PATH);
+    std::wstring ws(path);
+    size_t pos = ws.find_last_of(L"\\/");
+    if (pos != std::wstring::npos) ws = ws.substr(0, pos);
+    return ws + L"\\reminders.dat";
+}
+
+void LoadReminders() {
+    g_customReminders.clear();
+    std::wstring path = GetRemindersFilePath();
+    FILE* file = _wfopen(path.c_str(), L"r");
+    if (!file) {
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        std::wstring ws(exePath);
+        size_t pos = ws.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) ws = ws.substr(0, pos);
+        std::wstring localPath = ws + L"\\reminders.dat";
+        file = _wfopen(localPath.c_str(), L"r");
+    }
+    if (file) {
+        char line[2048];
+        while (fgets(line, sizeof(line), file)) {
+            int len = (int)strlen(line);
+            while (len > 0 && (line[len - 1] == '\r' || line[len - 1] == '\n')) {
+                line[--len] = '\0';
+            }
+            if (len == 0) continue;
+
+            std::vector<std::string> parts;
+            std::string cur;
+            for (int i = 0; i <= len; i++) {
+                if (line[i] == '\t' || line[i] == '\0') {
+                    parts.push_back(cur);
+                    cur.clear();
+                } else {
+                    cur += line[i];
+                }
+            }
+            if (parts.size() >= 10) {
+                CustomReminder r;
+                r.id = atoi(parts[0].c_str());
+                r.bsYear = atoi(parts[1].c_str());
+                r.bsMonth = atoi(parts[2].c_str());
+                r.bsDay = atoi(parts[3].c_str());
+                r.hasAlarm = (atoi(parts[4].c_str()) != 0);
+                r.alarmHour = atoi(parts[5].c_str());
+                r.alarmMinute = atoi(parts[6].c_str());
+                r.isAllDay = (atoi(parts[7].c_str()) != 0);
+                r.isTriggered = (atoi(parts[8].c_str()) != 0);
+                r.title = Utf8ToWide(parts[9]);
+                r.desc = (parts.size() >= 11) ? Utf8ToWide(parts[10]) : L"";
+                g_customReminders.push_back(r);
+            }
+        }
+        fclose(file);
+    }
+}
+
+void SaveReminders() {
+    std::wstring path = GetRemindersFilePath();
+    FILE* file = _wfopen(path.c_str(), L"w");
+    if (file) {
+        for (size_t i = 0; i < g_customReminders.size(); i++) {
+            const CustomReminder& r = g_customReminders[i];
+            std::string utf8Title = WideToUtf8(r.title);
+            std::string utf8Desc = WideToUtf8(r.desc);
+            for (size_t c = 0; c < utf8Title.size(); c++) {
+                if (utf8Title[c] == '\t' || utf8Title[c] == '\n' || utf8Title[c] == '\r') utf8Title[c] = ' ';
+            }
+            for (size_t c = 0; c < utf8Desc.size(); c++) {
+                if (utf8Desc[c] == '\t' || utf8Desc[c] == '\n' || utf8Desc[c] == '\r') utf8Desc[c] = ' ';
+            }
+            fprintf(file, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\n",
+                    r.id, r.bsYear, r.bsMonth, r.bsDay,
+                    r.hasAlarm ? 1 : 0, r.alarmHour, r.alarmMinute,
+                    r.isAllDay ? 1 : 0, r.isTriggered ? 1 : 0,
+                    utf8Title.c_str(), utf8Desc.c_str());
+        }
+        fclose(file);
+    }
+}
+
+CustomReminder* FindReminderForBS(int y, int m, int d) {
+    for (size_t i = 0; i < g_customReminders.size(); i++) {
+        if (g_customReminders[i].bsYear == y && g_customReminders[i].bsMonth == m && g_customReminders[i].bsDay == d) {
+            return &g_customReminders[i];
+        }
+    }
+    return NULL;
+}
+
+bool HasReminderForBS(int y, int m, int d) {
+    return FindReminderForBS(y, m, d) != NULL;
+}
+
+void DeleteReminderForBS(int y, int m, int d) {
+    for (auto it = g_customReminders.begin(); it != g_customReminders.end(); ) {
+        if (it->bsYear == y && it->bsMonth == m && it->bsDay == d) {
+            it = g_customReminders.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    SaveReminders();
+}
+
+void AddOrUpdateReminder(const CustomReminder& rem) {
+    bool found = false;
+    for (size_t i = 0; i < g_customReminders.size(); i++) {
+        if (g_customReminders[i].bsYear == rem.bsYear && g_customReminders[i].bsMonth == rem.bsMonth && g_customReminders[i].bsDay == rem.bsDay) {
+            g_customReminders[i] = rem;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        g_customReminders.push_back(rem);
+    }
+    SaveReminders();
+}
+
+std::wstring FormatAlarmTime(int h24, int minute) {
+    int h12 = h24 % 12;
+    if (h12 == 0) h12 = 12;
+    bool isPM = (h24 >= 12);
+    wchar_t buf[32];
+    swprintf_s(buf, 32, L"%02d:%02d %ls", h12, minute, isPM ? L"PM" : L"AM");
+    return buf;
+}
+
+// ── Audio Alarm Chime Loop ───────────────────────────────────────────────────
+DWORD WINAPI AlarmSoundThread(LPVOID lpParam) {
+    while (g_isAlarmSoundPlaying) {
+        Beep(784, 140); // G5
+        if (!g_isAlarmSoundPlaying) break;
+        Sleep(40);
+        Beep(880, 140); // A5
+        if (!g_isAlarmSoundPlaying) break;
+        Sleep(40);
+        Beep(1046, 220); // C6
+        if (!g_isAlarmSoundPlaying) break;
+        PlaySoundW(L"SystemAsterisk", NULL, SND_ALIAS | SND_ASYNC);
+        for (int i = 0; i < 15 && g_isAlarmSoundPlaying; i++) {
+            Sleep(100);
+        }
+    }
+    return 0;
+}
+
+void PlayAlarmSoundLoop() {
+    if (g_isAlarmSoundPlaying) return;
+    g_isAlarmSoundPlaying = true;
+    g_hAlarmThread = CreateThread(NULL, 0, AlarmSoundThread, NULL, 0, NULL);
+}
+
+void StopAlarmSound() {
+    g_isAlarmSoundPlaying = false;
+    PlaySoundW(NULL, NULL, 0);
+    if (g_hAlarmThread) {
+        WaitForSingleObject(g_hAlarmThread, 350);
+        CloseHandle(g_hAlarmThread);
+        g_hAlarmThread = NULL;
+    }
+}
+
+// ── Alarm Alert Popup Window ─────────────────────────────────────────────────
+void RenderAlarmAlert(HWND hWnd) {
+    if (!hWnd) return;
+
+    float s = g_dpiScale;
+    int rawW = (int)(440 * s);
+    int rawH = (int)(250 * s);
+
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = rawW;
+    bmi.bmiHeader.biHeight = -rawH;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pBits = NULL;
+    HBITMAP hBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hBitmap);
+
+    Graphics g(hdcMem);
+    g.SetSmoothingMode(SmoothingModeHighQuality);
+    g.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+    g.SetPixelOffsetMode(PixelOffsetModeHighQuality);
+    g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    g.Clear(Color(0, 0, 0, 0));
+
+    REAL w = (REAL)rawW;
+    REAL h = (REAL)rawH;
+
+    // Card background
+    Color bgCardColor = g_isLightTheme ? Color(255, 255, 255, 255) : Color(255, 26, 27, 32);
+    Color borderColor = Color(255, 220, 38, 38);
+
+    GraphicsPath cardPath;
+    REAL r = 16.0f * s;
+    REAL d = r * 2.0f;
+    cardPath.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f);
+    cardPath.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f);
+    cardPath.AddArc(w - d, h - d, d, d, 0.0f, 90.0f);
+    cardPath.AddArc(0.0f, h - d, d, d, 90.0f, 90.0f);
+    cardPath.CloseFigure();
+
+    SolidBrush cardBrush(bgCardColor);
+    g.FillPath(&cardBrush, &cardPath);
+    Pen borderPen(borderColor, 2.0f * s);
+    g.DrawPath(&borderPen, &cardPath);
+
+    // Header bar
+    REAL headerH = 42.0f * s;
+    FontFamily fontFamily(L"Segoe UI");
+    Font brandFont(&fontFamily, 13.0f * s, FontStyleBold, UnitPixel);
+    Color brandColor = g_isLightTheme ? Color(255, 20, 20, 20) : Color(255, 255, 255, 255);
+    SolidBrush brandBrush(brandColor);
+
+    StringFormat fmtNearCenter;
+    fmtNearCenter.SetAlignment(StringAlignmentNear);
+    fmtNearCenter.SetLineAlignment(StringAlignmentCenter);
+
+    RectF brandRect(20.0f * s, 0.0f, 260.0f * s, headerH);
+    g.DrawString(L"\u23F0  TITHIFY EVENT ALARM", -1, &brandFont, brandRect, &fmtNearCenter, &brandBrush);
+
+    // Close button [X]
+    REAL closeBtnSize = 26.0f * s;
+    REAL closeBtnX = w - 16.0f * s - closeBtnSize;
+    REAL closeBtnY = (headerH - closeBtnSize) / 2.0f;
+    Font closeFont(&fontFamily, 12.0f * s, FontStyleRegular, UnitPixel);
+    StringFormat fmtCenter;
+    fmtCenter.SetAlignment(StringAlignmentCenter);
+    fmtCenter.SetLineAlignment(StringAlignmentCenter);
+    RectF closeRect(closeBtnX, closeBtnY, closeBtnSize, closeBtnSize);
+    SolidBrush closeBrush(g_isLightTheme ? Color(180, 80, 80, 80) : Color(220, 200, 200, 200));
+    g.DrawString(L"\u2715", -1, &closeFont, closeRect, &fmtCenter, &closeBrush);
+
+    Color divColor = g_isLightTheme ? Color(30, 0, 0, 0) : Color(35, 255, 255, 255);
+    Pen divPen(divColor, 1.0f * s);
+    g.DrawLine(&divPen, 16.0f * s, headerH, w - 16.0f * s, headerH);
+
+    // Body Area: Glowing Alarm Bell Circle
+    REAL iconBoxX = 22.0f * s;
+    REAL iconBoxY = headerH + 20.0f * s;
+    REAL iconBoxSize = 52.0f * s;
+
+    SolidBrush bellBg(Color(45, 220, 38, 38));
+    g.FillEllipse(&bellBg, iconBoxX, iconBoxY, iconBoxSize, iconBoxSize);
+    Pen bellRingPen(Color(200, 220, 38, 38), 1.5f * s);
+    g.DrawEllipse(&bellRingPen, iconBoxX, iconBoxY, iconBoxSize, iconBoxSize);
+
+    Font bellFont(&fontFamily, 24.0f * s, FontStyleBold, UnitPixel);
+    RectF bellRect(iconBoxX, iconBoxY, iconBoxSize, iconBoxSize);
+    SolidBrush bellTextBrush(Color(255, 255, 255, 255));
+    g.DrawString(L"\u23F0", -1, &bellFont, bellRect, &fmtCenter, &bellTextBrush);
+
+    // Event Title
+    REAL textX = iconBoxX + iconBoxSize + 16.0f * s;
+    REAL textW = w - textX - 20.0f * s;
+
+    Font titleFont(&fontFamily, 17.0f * s, FontStyleBold, UnitPixel);
+    SolidBrush titleBrush(brandColor);
+    RectF titleRect(textX, iconBoxY - 2.0f * s, textW, 26.0f * s);
+    g.DrawString(g_activeAlertReminder.title.c_str(), -1, &titleFont, titleRect, &fmtNearCenter, &titleBrush);
+
+    // Date & Time Subtitle
+    std::wstring npDate = ToDevanagariNum(g_activeAlertReminder.bsDay) + L" " + kNepaliMonthNamesNP[g_activeAlertReminder.bsMonth - 1] + L" " + ToDevanagariNum(g_activeAlertReminder.bsYear);
+    std::wstring timeStr = g_activeAlertReminder.isAllDay ? L"All-Day Event" : (L"Alarm Time: " + FormatAlarmTime(g_activeAlertReminder.alarmHour, g_activeAlertReminder.alarmMinute));
+    std::wstring subStr = npDate + L"  \u2022  " + timeStr;
+
+    Font subFont(&fontFamily, 11.5f * s, FontStyleBold, UnitPixel);
+    SolidBrush subBrush(Color(255, 220, 38, 38));
+    RectF subRect(textX, iconBoxY + 26.0f * s, textW, 20.0f * s);
+    g.DrawString(subStr.c_str(), -1, &subFont, subRect, &fmtNearCenter, &subBrush);
+
+    // Description
+    Font descFont(&fontFamily, 12.5f * s, FontStyleRegular, UnitPixel);
+    Color msgColor = g_isLightTheme ? Color(255, 60, 64, 72) : Color(255, 228, 232, 238);
+    SolidBrush descBrush(msgColor);
+    StringFormat fmtWrap;
+    fmtWrap.SetAlignment(StringAlignmentNear);
+    fmtWrap.SetLineAlignment(StringAlignmentNear);
+    RectF descRect(textX, iconBoxY + 48.0f * s, textW, 50.0f * s);
+    std::wstring descText = g_activeAlertReminder.desc.empty() ? L"Custom event alert scheduled for today." : g_activeAlertReminder.desc;
+    g.DrawString(descText.c_str(), -1, &descFont, descRect, &fmtWrap, &descBrush);
+
+    // Buttons
+    REAL btnH = 36.0f * s;
+    REAL btnY = h - 16.0f * s - btnH;
+
+    // Snooze 5 Min Button
+    REAL snoozeW = 110.0f * s;
+    REAL snoozeX = w - 18.0f * s - 140.0f * s - 10.0f * s - snoozeW;
+    GraphicsPath snPath; AddRoundedRectangle(snPath, snoozeX, btnY, snoozeW, btnH, 8.0f * s);
+    SolidBrush snBg(g_isLightTheme ? Color(20, 0, 0, 0) : Color(25, 255, 255, 255));
+    g.FillPath(&snBg, &snPath);
+    Pen snBorder(g_isLightTheme ? Color(50, 0, 0, 0) : Color(50, 255, 255, 255), 1.0f * s);
+    g.DrawPath(&snBorder, &snPath);
+    Font btnFont(&fontFamily, 12.0f * s, FontStyleBold, UnitPixel);
+    RectF snRect(snoozeX, btnY, snoozeW, btnH);
+    g.DrawString(L"Snooze 5 Min", -1, &btnFont, snRect, &fmtCenter, &brandBrush);
+
+    // Dismiss Alarm Button
+    REAL dismW = 140.0f * s;
+    REAL dismX = w - 18.0f * s - dismW;
+    GraphicsPath dismPath; AddRoundedRectangle(dismPath, dismX, btnY, dismW, btnH, 8.0f * s);
+    SolidBrush dismBg(Color(255, 220, 38, 38));
+    g.FillPath(&dismBg, &dismPath);
+    RectF dismRect(dismX, btnY, dismW, btnH);
+    SolidBrush dismText(Color(255, 255, 255, 255));
+    g.DrawString(L"\u2715 Dismiss Alarm", -1, &btnFont, dismRect, &fmtCenter, &dismText);
+
+    // Apply alpha update
+    RECT rcW; GetWindowRect(hWnd, &rcW);
+    POINT ptDst = { rcW.left, rcW.top };
+    SIZE sizeDst = { rawW, rawH };
+    POINT ptSrc = { 0, 0 };
+    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    UpdateLayeredWindow(hWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+    SelectObject(hdcMem, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+}
+
+void CloseAlarmAlert();
+
+LRESULT CALLBACK AlarmAlertWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_SETCURSOR: {
+        POINT pt; GetCursorPos(&pt);
+        RECT rc; GetWindowRect(hWnd, &rc);
+        int lx = pt.x - rc.left;
+        int ly = pt.y - rc.top;
+        float s = g_dpiScale;
+        int w = rc.right - rc.left;
+        int h = rc.bottom - rc.top;
+
+        int btnH = (int)(36 * s);
+        int btnY = h - (int)(16 * s) - btnH;
+        int dismW = (int)(140 * s);
+        int dismX = w - (int)(18 * s) - dismW;
+        int snoozeW = (int)(110 * s);
+        int snoozeX = dismX - (int)(10 * s) - snoozeW;
+        int closeBtnSize = (int)(26 * s);
+        int closeBtnX = w - (int)(16 * s) - closeBtnSize;
+        int closeBtnY = (int)((42 * s - closeBtnSize) / 2);
+
+        bool onBtn = false;
+        if (lx >= dismX && lx <= dismX + dismW && ly >= btnY && ly <= btnY + btnH) onBtn = true;
+        else if (lx >= snoozeX && lx <= snoozeX + snoozeW && ly >= btnY && ly <= btnY + btnH) onBtn = true;
+        else if (lx >= closeBtnX && lx <= closeBtnX + closeBtnSize && ly >= closeBtnY && ly <= closeBtnY + closeBtnSize) onBtn = true;
+
+        if (onBtn) {
+            SetCursor(LoadCursor(NULL, IDC_HAND));
+            return TRUE;
+        }
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+        return TRUE;
+    }
+
+    case WM_LBUTTONDOWN: {
+        POINT pt; GetCursorPos(&pt);
+        RECT rc; GetWindowRect(hWnd, &rc);
+        int lx = pt.x - rc.left;
+        int ly = pt.y - rc.top;
+        float s = g_dpiScale;
+        int w = rc.right - rc.left;
+        int h = rc.bottom - rc.top;
+
+        int btnH = (int)(36 * s);
+        int btnY = h - (int)(16 * s) - btnH;
+        int dismW = (int)(140 * s);
+        int dismX = w - (int)(18 * s) - dismW;
+        int snoozeW = (int)(110 * s);
+        int snoozeX = dismX - (int)(10 * s) - snoozeW;
+        int closeBtnSize = (int)(26 * s);
+        int closeBtnX = w - (int)(16 * s) - closeBtnSize;
+        int closeBtnY = (int)((42 * s - closeBtnSize) / 2);
+
+        if (lx >= dismX && lx <= dismX + dismW && ly >= btnY && ly <= btnY + btnH) {
+            CloseAlarmAlert();
+        } else if (lx >= snoozeX && lx <= snoozeX + snoozeW && ly >= btnY && ly <= btnY + btnH) {
+            SYSTEMTIME st; GetLocalTime(&st);
+            int nextMin = st.wMinute + 5;
+            int nextHour = st.wHour + (nextMin / 60);
+            nextMin %= 60; nextHour %= 24;
+            g_activeAlertReminder.alarmHour = nextHour;
+            g_activeAlertReminder.alarmMinute = nextMin;
+            g_activeAlertReminder.isTriggered = false;
+            AddOrUpdateReminder(g_activeAlertReminder);
+            CloseAlarmAlert();
+        } else if (lx >= closeBtnX && lx <= closeBtnX + closeBtnSize && ly >= closeBtnY && ly <= closeBtnY + closeBtnSize) {
+            CloseAlarmAlert();
+        }
+        break;
+    }
+
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE || wParam == VK_RETURN || wParam == VK_SPACE) {
+            CloseAlarmAlert();
+        }
+        break;
+
+    default:
+        return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+void ShowAlarmAlert(const CustomReminder& rem) {
+    g_activeAlertReminder = rem;
+    PlayAlarmSoundLoop();
+
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    static bool s_alarmClassRegistered = false;
+    if (!s_alarmClassRegistered) {
+        WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
+        wc.lpfnWndProc = AlarmAlertWndProc;
+        wc.hInstance = hInst;
+        wc.lpszClassName = L"NepaliAlarmAlertClass";
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        RegisterClassExW(&wc);
+        s_alarmClassRegistered = true;
+    }
+
+    float s = g_dpiScale;
+    int dlgW = (int)(440 * s);
+    int dlgH = (int)(250 * s);
+
+    HMONITOR hMon = MonitorFromWindow(g_hWnd ? g_hWnd : GetDesktopWindow(), MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+
+    int dlgX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - dlgW) / 2;
+    int dlgY = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - dlgH) / 2;
+
+    if (!g_hAlarmAlertWnd || !IsWindow(g_hAlarmAlertWnd)) {
+        g_hAlarmAlertWnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            L"NepaliAlarmAlertClass",
+            L"Tithify Event Alarm",
+            WS_POPUP,
+            dlgX, dlgY, dlgW, dlgH,
+            NULL, NULL, hInst, NULL
+        );
+    } else {
+        SetWindowPos(g_hAlarmAlertWnd, HWND_TOPMOST, dlgX, dlgY, dlgW, dlgH, SWP_NOACTIVATE);
+    }
+
+    g_isAlarmAlertOpen = true;
+    RenderAlarmAlert(g_hAlarmAlertWnd);
+    ShowWindow(g_hAlarmAlertWnd, SW_SHOWNOACTIVATE);
+    SetForegroundWindow(g_hAlarmAlertWnd);
+    SetFocus(g_hAlarmAlertWnd);
+
+    // Show tray balloon toast
+    NOTIFYICONDATAW nid = g_nid;
+    nid.uFlags = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO;
+    wcscpy_s(nid.szInfoTitle, L"\u23F0 Tithify Event Alarm!");
+    std::wstring toastText = rem.title;
+    if (!rem.desc.empty()) toastText += L" - " + rem.desc;
+    wcsncpy_s(nid.szInfo, toastText.c_str(), _TRUNCATE);
+    Shell_NotifyIconW(NIM_MODIFY, &nid);
+}
+
+void CloseAlarmAlert() {
+    StopAlarmSound();
+    if (g_hAlarmAlertWnd && IsWindow(g_hAlarmAlertWnd)) {
+        ShowWindow(g_hAlarmAlertWnd, SW_HIDE);
+    }
+    g_isAlarmAlertOpen = false;
+}
+
+// ── Background Reminder Poller Engine ────────────────────────────────────────
+void CheckPendingReminders() {
+    int curY = 0, curM = 0, curD = 0, curDow = 0;
+    GetCurrentBSDate(curY, curM, curD, curDow);
+
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+
+    for (size_t i = 0; i < g_customReminders.size(); i++) {
+        CustomReminder& rem = g_customReminders[i];
+        if (rem.bsYear == curY && rem.bsMonth == curM && rem.bsDay == curD) {
+            if (!rem.isTriggered) {
+                bool shouldTrigger = false;
+                if (rem.isAllDay) {
+                    shouldTrigger = true;
+                } else if (rem.hasAlarm) {
+                    if (st.wHour == rem.alarmHour && st.wMinute == rem.alarmMinute) {
+                        shouldTrigger = true;
+                    } else if (st.wHour > rem.alarmHour || (st.wHour == rem.alarmHour && st.wMinute > rem.alarmMinute)) {
+                        shouldTrigger = true;
+                    }
+                }
+
+                if (shouldTrigger) {
+                    rem.isTriggered = true;
+                    SaveReminders();
+                    ShowAlarmAlert(rem);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// ── Reminder Dashboard State & Engine ────────────────────────────────────────
+struct ReminderDashboardState {
+    int bsYear = 2082;
+    int bsMonth = 1;
+    int bsDay = 1;
+    std::wstring title;
+    std::wstring desc;
+    bool hasAlarm = true;
+    bool isAllDay = false;
+    int hour12 = 9;
+    int minute = 0;
+    bool isPM = false;
+
+    int focusedField = 1; // 1 = Title, 2 = Description, 0 = None
+    bool cursorBlink = true;
+    int hoveredCtrl = -1;
+    bool isDragging = false;
+    POINT dragStart = { 0, 0 };
+    int dlgX = 0;
+    int dlgY = 0;
+    int dlgW = 430;
+    int dlgH = 385;
+    bool isExisting = false;
+} g_remState;
+
+void CloseReminderDashboard();
+
+void RenderReminderDashboard(HWND hWnd) {
+    if (!hWnd) return;
+
+    float s = g_dpiScale;
+    int rawW = (int)(430 * s);
+    int rawH = (int)(385 * s);
+
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = rawW;
+    bmi.bmiHeader.biHeight = -rawH;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pBits = NULL;
+    HBITMAP hBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hBitmap);
+
+    Graphics graphics(hdcMem);
+    graphics.SetSmoothingMode(SmoothingModeHighQuality);
+    graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+    graphics.SetPixelOffsetMode(PixelOffsetModeHighQuality);
+    graphics.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    graphics.Clear(Color(0, 0, 0, 0));
+
+    REAL w = (REAL)rawW;
+    REAL h = (REAL)rawH;
+
+    // Outer card background
+    Color bgCardColor = g_isLightTheme ? Color(248, 245, 245, 248) : Color(245, 24, 24, 28);
+    Color borderColor = g_isLightTheme ? Color(180, 200, 0, 0) : Color(200, 220, 0, 0);
+
+    SolidBrush cardBrush(bgCardColor);
+    GraphicsPath cardPath;
+    REAL r = 14.0f * s;
+    REAL d = r * 2.0f;
+    cardPath.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f);
+    cardPath.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f);
+    cardPath.AddArc(w - d, h - d, d, d, 0.0f, 90.0f);
+    cardPath.AddArc(0.0f, h - d, d, d, 90.0f, 90.0f);
+    cardPath.CloseFigure();
+    graphics.FillPath(&cardBrush, &cardPath);
+    Pen borderPen(borderColor, 1.5f * s);
+    graphics.DrawPath(&borderPen, &cardPath);
+
+    // Header bar
+    REAL headerH = 40.0f * s;
+    FontFamily fontFamily(L"Segoe UI");
+    Font titleFont(&fontFamily, 13.5f * s, FontStyleBold, UnitPixel);
+    Font subFont(&fontFamily, 10.5f * s, FontStyleBold, UnitPixel);
+    Font labelFont(&fontFamily, 10.5f * s, FontStyleBold, UnitPixel);
+    Font inputFont(&fontFamily, 12.5f * s, FontStyleRegular, UnitPixel);
+    Font btnFont(&fontFamily, 12.0f * s, FontStyleBold, UnitPixel);
+
+    Color textColor = g_isLightTheme ? Color(255, 20, 20, 20) : Color(255, 255, 255, 255);
+    Color subTextColor = g_isLightTheme ? Color(180, 90, 90, 90) : Color(180, 180, 180, 180);
+    SolidBrush textBrush(textColor);
+    SolidBrush subTextBrush(subTextColor);
+
+    StringFormat formatNear;
+    formatNear.SetAlignment(StringAlignmentNear);
+    formatNear.SetLineAlignment(StringAlignmentCenter);
+
+    StringFormat formatCenter;
+    formatCenter.SetAlignment(StringAlignmentCenter);
+    formatCenter.SetLineAlignment(StringAlignmentCenter);
+
+    StringFormat formatFar;
+    formatFar.SetAlignment(StringAlignmentFar);
+    formatFar.SetLineAlignment(StringAlignmentCenter);
+
+    // Title: "SET REMINDER" or "EDIT REMINDER"
+    RectF titleRect(20.0f * s, 0.0f, 170.0f * s, headerH);
+    graphics.DrawString(g_remState.isExisting ? L"\u23F0 EDIT REMINDER" : L"\u23F0 SET REMINDER", -1, &titleFont, titleRect, &formatNear, &textBrush);
+
+    // Date subtitle
+    std::wstring npDateStr = ToDevanagariNum(g_remState.bsDay) + L" " + kNepaliMonthNamesNP[g_remState.bsMonth - 1] + L" " + ToDevanagariNum(g_remState.bsYear);
+    int adY = 0, adM = 0, adD = 0, adDow = 0;
+    BSToAD(g_remState.bsYear, g_remState.bsMonth, g_remState.bsDay, adY, adM, adD, adDow);
+    std::wstring adDateStr = std::to_wstring(adD) + L" " + kEnglishMonthNames[adM - 1];
+    std::wstring fullDateStr = npDateStr + L"  \u2022  " + adDateStr;
+
+    RectF dateRect(175.0f * s, 0.0f, w - 215.0f * s, headerH);
+    graphics.DrawString(fullDateStr.c_str(), -1, &subFont, dateRect, &formatFar, &subTextBrush);
+
+    // Close [X] button
+    REAL closeBtnSize = 24.0f * s;
+    REAL closeBtnX = w - 16.0f * s - closeBtnSize;
+    REAL closeBtnY = (headerH - closeBtnSize) / 2.0f;
+    if (g_remState.hoveredCtrl == 1) {
+        SolidBrush hoverCloseBrush(g_isLightTheme ? Color(30, 0, 0, 0) : Color(45, 255, 255, 255));
+        graphics.FillEllipse(&hoverCloseBrush, closeBtnX, closeBtnY, closeBtnSize, closeBtnSize);
+    }
+    RectF closeRect(closeBtnX, closeBtnY, closeBtnSize, closeBtnSize);
+    graphics.DrawString(L"\u2715", -1, &subFont, closeRect, &formatCenter, &subTextBrush);
+
+    // Header separator line
+    Color lineHorizColor = g_isLightTheme ? Color(40, 0, 0, 0) : Color(40, 255, 255, 255);
+    Pen lineHorizPen(lineHorizColor, 1.0f * s);
+    graphics.DrawLine(&lineHorizPen, 16.0f * s, headerH, w - 16.0f * s, headerH);
+
+    // Section 1: Event Name Input Box
+    RectF lblTitleRect(22.0f * s, 48.0f * s, w - 44.0f * s, 18.0f * s);
+    graphics.DrawString(L"EVENT NAME / TITLE", -1, &labelFont, lblTitleRect, &formatNear, &textBrush);
+
+    REAL tBoxX = 22.0f * s, tBoxY = 68.0f * s, tBoxW = w - 44.0f * s, tBoxH = 34.0f * s;
+    GraphicsPath tBoxPath;
+    AddRoundedRectangle(tBoxPath, tBoxX, tBoxY, tBoxW, tBoxH, 6.0f * s);
+    SolidBrush inputBg(g_isLightTheme ? Color(20, 0, 0, 0) : Color(25, 255, 255, 255));
+    graphics.FillPath(&inputBg, &tBoxPath);
+    Pen tBorderPen(g_remState.focusedField == 1 ? Color(255, 220, 38, 38) : (g_isLightTheme ? Color(50, 0, 0, 0) : Color(50, 255, 255, 255)), g_remState.focusedField == 1 ? 1.5f * s : 1.0f * s);
+    graphics.DrawPath(&tBorderPen, &tBoxPath);
+
+    RectF tTextRect(tBoxX + 10.0f * s, tBoxY, tBoxW - 20.0f * s, tBoxH);
+    if (g_remState.title.empty()) {
+        graphics.DrawString(L"e.g. Birthday, Meeting, Exam, Festival...", -1, &inputFont, tTextRect, &formatNear, &subTextBrush);
+    } else {
+        graphics.DrawString(g_remState.title.c_str(), -1, &inputFont, tTextRect, &formatNear, &textBrush);
+    }
+
+    if (g_remState.focusedField == 1 && g_remState.cursorBlink) {
+        RectF measured;
+        graphics.MeasureString(g_remState.title.c_str(), -1, &inputFont, tTextRect, &formatNear, &measured);
+        REAL caretX = tBoxX + 10.0f * s + measured.Width;
+        if (caretX > tBoxX + tBoxW - 10.0f * s) caretX = tBoxX + tBoxW - 10.0f * s;
+        Pen caretPen(textColor, 1.5f * s);
+        graphics.DrawLine(&caretPen, caretX, tBoxY + 7.0f * s, caretX, tBoxY + tBoxH - 7.0f * s);
+    }
+
+    // Section 2: Description Input Box
+    RectF lblDescRect(22.0f * s, 108.0f * s, w - 44.0f * s, 18.0f * s);
+    graphics.DrawString(L"DESCRIPTION / NOTES", -1, &labelFont, lblDescRect, &formatNear, &textBrush);
+
+    REAL dBoxX = 22.0f * s, dBoxY = 126.0f * s, dBoxW = w - 44.0f * s, dBoxH = 50.0f * s;
+    GraphicsPath dBoxPath;
+    AddRoundedRectangle(dBoxPath, dBoxX, dBoxY, dBoxW, dBoxH, 6.0f * s);
+    graphics.FillPath(&inputBg, &dBoxPath);
+    Pen dBorderPen(g_remState.focusedField == 2 ? Color(255, 220, 38, 38) : (g_isLightTheme ? Color(50, 0, 0, 0) : Color(50, 255, 255, 255)), g_remState.focusedField == 2 ? 1.5f * s : 1.0f * s);
+    graphics.DrawPath(&dBorderPen, &dBoxPath);
+
+    StringFormat formatDescInput;
+    formatDescInput.SetAlignment(StringAlignmentNear);
+    formatDescInput.SetLineAlignment(StringAlignmentNear);
+    RectF dTextRect(dBoxX + 10.0f * s, dBoxY + 6.0f * s, dBoxW - 20.0f * s, dBoxH - 12.0f * s);
+    if (g_remState.desc.empty()) {
+        graphics.DrawString(L"Short description, location, or reminder notes...", -1, &inputFont, dTextRect, &formatDescInput, &subTextBrush);
+    } else {
+        graphics.DrawString(g_remState.desc.c_str(), -1, &inputFont, dTextRect, &formatDescInput, &textBrush);
+    }
+
+    if (g_remState.focusedField == 2 && g_remState.cursorBlink) {
+        RectF measured;
+        graphics.MeasureString(g_remState.desc.c_str(), -1, &inputFont, dTextRect, &formatDescInput, &measured);
+        REAL caretX = dBoxX + 10.0f * s + measured.Width;
+        REAL caretY = dBoxY + 6.0f * s;
+        if (caretX > dBoxX + dBoxW - 10.0f * s) caretX = dBoxX + dBoxW - 10.0f * s;
+        Pen caretPen(textColor, 1.5f * s);
+        graphics.DrawLine(&caretPen, caretX, caretY + 2.0f * s, caretX, caretY + 18.0f * s);
+    }
+
+    // Section 3: Alarm & Time Controls Card
+    REAL aCardX = 22.0f * s, aCardY = 186.0f * s, aCardW = w - 44.0f * s, aCardH = 96.0f * s;
+    GraphicsPath aCardPath;
+    AddRoundedRectangle(aCardPath, aCardX, aCardY, aCardW, aCardH, 8.0f * s);
+    SolidBrush aCardBg(g_isLightTheme ? Color(12, 0, 0, 0) : Color(18, 255, 255, 255));
+    graphics.FillPath(&aCardBg, &aCardPath);
+    Pen aCardBorder(g_isLightTheme ? Color(35, 0, 0, 0) : Color(35, 255, 255, 255), 1.0f * s);
+    graphics.DrawPath(&aCardBorder, &aCardPath);
+
+    // Row 1: Sound Alarm toggle & All-Day toggle
+    RectF soundLblRect(aCardX + 12.0f * s, aCardY + 10.0f * s, 100.0f * s, 22.0f * s);
+    graphics.DrawString(L"Sound Alarm", -1, &labelFont, soundLblRect, &formatNear, &textBrush);
+
+    REAL pillX = aCardX + 112.0f * s, pillY = aCardY + 10.0f * s, pillW = 42.0f * s, pillH = 22.0f * s;
+    GraphicsPath pPath;
+    REAL pillR = pillH / 2.0f;
+    pPath.AddArc(pillX, pillY, pillR * 2.0f, pillR * 2.0f, 90.0f, 180.0f);
+    pPath.AddArc(pillX + pillW - pillR * 2.0f, pillY, pillR * 2.0f, pillR * 2.0f, 270.0f, 180.0f);
+    pPath.CloseFigure();
+    SolidBrush pillBrush(g_remState.hasAlarm ? Color(255, 220, 38, 38) : (g_isLightTheme ? Color(255, 200, 200, 204) : Color(255, 80, 80, 85)));
+    graphics.FillPath(&pillBrush, &pPath);
+    REAL knobSz = 18.0f * s;
+    REAL knobX = g_remState.hasAlarm ? (pillX + pillW - knobSz - 2.0f * s) : (pillX + 2.0f * s);
+    REAL knobY = pillY + (pillH - knobSz) / 2.0f;
+    SolidBrush knobBrush(Color(255, 255, 255, 255));
+    graphics.FillEllipse(&knobBrush, knobX, knobY, knobSz, knobSz);
+
+    RectF allDayLblRect(aCardX + 185.0f * s, aCardY + 10.0f * s, 120.0f * s, 22.0f * s);
+    graphics.DrawString(L"All-Day Event", -1, &labelFont, allDayLblRect, &formatNear, &textBrush);
+
+    REAL allDayX = aCardX + aCardW - 54.0f * s, allDayY = aCardY + 10.0f * s, allDayW = 42.0f * s, allDayH = 22.0f * s;
+    GraphicsPath adPath;
+    adPath.AddArc(allDayX, allDayY, pillR * 2.0f, pillR * 2.0f, 90.0f, 180.0f);
+    adPath.AddArc(allDayX + allDayW - pillR * 2.0f, allDayY, pillR * 2.0f, pillR * 2.0f, 270.0f, 180.0f);
+    adPath.CloseFigure();
+    SolidBrush adBrush(g_remState.isAllDay ? Color(255, 220, 38, 38) : (g_isLightTheme ? Color(255, 200, 200, 204) : Color(255, 80, 80, 85)));
+    graphics.FillPath(&adBrush, &adPath);
+    REAL adKnobX = g_remState.isAllDay ? (allDayX + allDayW - knobSz - 2.0f * s) : (allDayX + 2.0f * s);
+    graphics.FillEllipse(&knobBrush, adKnobX, knobY, knobSz, knobSz);
+
+    // Row 2: Time Controls
+    REAL row2Y = aCardY + 48.0f * s;
+    if (!g_remState.isAllDay) {
+        RectF tLblRect(aCardX + 12.0f * s, row2Y + 3.0f * s, 85.0f * s, 26.0f * s);
+        graphics.DrawString(L"Alarm Time:", -1, &labelFont, tLblRect, &formatNear, &textBrush);
+
+        REAL hMinusX = aCardX + 102.0f * s, hY = row2Y + 2.0f * s, stepBtnW = 22.0f * s, stepBtnH = 26.0f * s;
+        RectF hMinusRect(hMinusX, hY, stepBtnW, stepBtnH);
+        DrawIconButton(graphics, hMinusRect, L"\u2212", g_remState.hoveredCtrl == 6, g_isLightTheme, btnFont);
+
+        REAL hBoxX = hMinusX + stepBtnW + 3.0f * s, hBoxW = 32.0f * s;
+        RectF hBoxRect(hBoxX, hY, hBoxW, stepBtnH);
+        GraphicsPath hBoxPath; AddRoundedRectangle(hBoxPath, hBoxX, hY, hBoxW, stepBtnH, 4.0f * s);
+        graphics.FillPath(&inputBg, &hBoxPath);
+        graphics.DrawPath(&aCardBorder, &hBoxPath);
+        wchar_t hBuf[16]; swprintf_s(hBuf, 16, L"%02d", g_remState.hour12);
+        graphics.DrawString(hBuf, -1, &btnFont, hBoxRect, &formatCenter, &textBrush);
+
+        REAL hPlusX = hBoxX + hBoxW + 3.0f * s;
+        RectF hPlusRect(hPlusX, hY, stepBtnW, stepBtnH);
+        DrawIconButton(graphics, hPlusRect, L"+", g_remState.hoveredCtrl == 7, g_isLightTheme, btnFont);
+
+        REAL colonX = hPlusX + stepBtnW + 2.0f * s;
+        RectF colonRect(colonX, hY, 12.0f * s, stepBtnH);
+        graphics.DrawString(L":", -1, &btnFont, colonRect, &formatCenter, &textBrush);
+
+        REAL mMinusX = colonX + 12.0f * s;
+        RectF mMinusRect(mMinusX, hY, stepBtnW, stepBtnH);
+        DrawIconButton(graphics, mMinusRect, L"\u2212", g_remState.hoveredCtrl == 8, g_isLightTheme, btnFont);
+
+        REAL mBoxX = mMinusX + stepBtnW + 3.0f * s, mBoxW = 32.0f * s;
+        RectF mBoxRect(mBoxX, hY, mBoxW, stepBtnH);
+        GraphicsPath mBoxPath; AddRoundedRectangle(mBoxPath, mBoxX, hY, mBoxW, stepBtnH, 4.0f * s);
+        graphics.FillPath(&inputBg, &mBoxPath);
+        graphics.DrawPath(&aCardBorder, &mBoxPath);
+        wchar_t mBuf[16]; swprintf_s(mBuf, 16, L"%02d", g_remState.minute);
+        graphics.DrawString(mBuf, -1, &btnFont, mBoxRect, &formatCenter, &textBrush);
+
+        REAL mPlusX = mBoxX + mBoxW + 3.0f * s;
+        RectF mPlusRect(mPlusX, hY, stepBtnW, stepBtnH);
+        DrawIconButton(graphics, mPlusRect, L"+", g_remState.hoveredCtrl == 9, g_isLightTheme, btnFont);
+
+        REAL ampmX = mPlusX + stepBtnW + 8.0f * s, ampmW = 44.0f * s;
+        RectF ampmRect(ampmX, hY, ampmW, stepBtnH);
+        DrawIconButton(graphics, ampmRect, g_remState.isPM ? L"PM" : L"AM", g_remState.hoveredCtrl == 10, g_isLightTheme, btnFont);
+
+        REAL bellX = ampmX + ampmW + 6.0f * s, bellW = 28.0f * s;
+        RectF bellRect(bellX, hY, bellW, stepBtnH);
+        DrawIconButton(graphics, bellRect, L"\u23F0", g_remState.hoveredCtrl == 14, g_isLightTheme, btnFont);
+    } else {
+        RectF allDayNoteRect(aCardX + 14.0f * s, row2Y + 6.0f * s, aCardW - 28.0f * s, 26.0f * s);
+        graphics.DrawString(L"\u24D8 Alert will sound on the morning of this Nepali date.", -1, &subFont, allDayNoteRect, &formatNear, &subTextBrush);
+    }
+
+    // Section 4: Action Buttons
+    REAL btnH = 34.0f * s;
+    REAL btnY = h - 16.0f * s - btnH;
+
+    if (g_remState.isExisting) {
+        REAL delW = 85.0f * s;
+        REAL delX = 22.0f * s;
+        RectF delRect(delX, btnY, delW, btnH);
+        GraphicsPath delPath; AddRoundedRectangle(delPath, delX, btnY, delW, btnH, 8.0f * s);
+        bool isDelHovered = (g_remState.hoveredCtrl == 12);
+        SolidBrush delBg(isDelHovered ? Color(255, 220, 38, 38) : Color(20, 220, 38, 38));
+        graphics.FillPath(&delBg, &delPath);
+        Pen delBorder(isDelHovered ? Color(255, 220, 38, 38) : Color(130, 220, 38, 38), 1.0f * s);
+        graphics.DrawPath(&delBorder, &delPath);
+        SolidBrush delText(isDelHovered ? Color(255, 255, 255, 255) : Color(255, 220, 38, 38));
+        graphics.DrawString(L"Delete", -1, &btnFont, delRect, &formatCenter, &delText);
+    }
+
+    REAL cancelW = 80.0f * s;
+    REAL cancelX = (g_remState.isExisting ? 180.0f : 160.0f) * s;
+    RectF cancelRect(cancelX, btnY, cancelW, btnH);
+    GraphicsPath cancelPath; AddRoundedRectangle(cancelPath, cancelX, btnY, cancelW, btnH, 8.0f * s);
+    SolidBrush cancelBg(g_remState.hoveredCtrl == 13 ? (g_isLightTheme ? Color(35, 0, 0, 0) : Color(45, 255, 255, 255)) : (g_isLightTheme ? Color(15, 0, 0, 0) : Color(20, 255, 255, 255)));
+    graphics.FillPath(&cancelBg, &cancelPath);
+    Pen cancelBorder(g_isLightTheme ? Color(50, 0, 0, 0) : Color(50, 255, 255, 255), 1.0f * s);
+    graphics.DrawPath(&cancelBorder, &cancelPath);
+    graphics.DrawString(L"Cancel", -1, &btnFont, cancelRect, &formatCenter, &textBrush);
+
+    REAL saveW = 145.0f * s;
+    REAL saveX = w - 22.0f * s - saveW;
+    RectF saveRect(saveX, btnY, saveW, btnH);
+    GraphicsPath savePath; AddRoundedRectangle(savePath, saveX, btnY, saveW, btnH, 8.0f * s);
+    SolidBrush saveBg(g_remState.hoveredCtrl == 11 ? Color(255, 240, 55, 55) : Color(255, 220, 38, 38));
+    graphics.FillPath(&saveBg, &savePath);
+    SolidBrush saveText(Color(255, 255, 255, 255));
+    graphics.DrawString(g_remState.hasAlarm ? L"Save & Set Alarm" : L"Save Reminder", -1, &btnFont, saveRect, &formatCenter, &saveText);
+
+    POINT ptDst = { g_remState.dlgX, g_remState.dlgY };
+    SIZE sizeDst = { rawW, rawH };
+    POINT ptSrc = { 0, 0 };
+    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    UpdateLayeredWindow(hWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+    SelectObject(hdcMem, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+}
+
+int HitTestReminderDashboard(int lx, int ly, float s, REAL w, REAL h) {
+    REAL headerH = 40.0f * s;
+    REAL closeBtnSize = 24.0f * s;
+    REAL closeBtnX = w - 16.0f * s - closeBtnSize;
+    REAL closeBtnY = (headerH - closeBtnSize) / 2.0f;
+    if (lx >= closeBtnX && lx <= closeBtnX + closeBtnSize && ly >= closeBtnY && ly <= closeBtnY + closeBtnSize) return 1;
+
+    REAL tBoxX = 22.0f * s, tBoxY = 68.0f * s, tBoxW = w - 44.0f * s, tBoxH = 34.0f * s;
+    if (lx >= tBoxX && lx <= tBoxX + tBoxW && ly >= tBoxY && ly <= tBoxY + tBoxH) return 2;
+
+    REAL dBoxX = 22.0f * s, dBoxY = 126.0f * s, dBoxW = w - 44.0f * s, dBoxH = 50.0f * s;
+    if (lx >= dBoxX && lx <= dBoxX + dBoxW && ly >= dBoxY && ly <= dBoxY + dBoxH) return 3;
+
+    REAL aCardX = 22.0f * s, aCardY = 186.0f * s, aCardW = w - 44.0f * s;
+    REAL pillX = aCardX + 112.0f * s, pillY = aCardY + 10.0f * s, pillW = 42.0f * s, pillH = 22.0f * s;
+    if (lx >= pillX && lx <= pillX + pillW && ly >= pillY && ly <= pillY + pillH) return 4;
+
+    REAL allDayX = aCardX + aCardW - 54.0f * s, allDayY = aCardY + 10.0f * s, allDayW = 42.0f * s, allDayH = 22.0f * s;
+    if (lx >= allDayX && lx <= allDayX + allDayW && ly >= allDayY && ly <= allDayY + allDayH) return 5;
+
+    REAL row2Y = aCardY + 48.0f * s;
+    if (!g_remState.isAllDay) {
+        REAL hMinusX = aCardX + 102.0f * s, hY = row2Y + 2.0f * s, stepBtnW = 22.0f * s, stepBtnH = 26.0f * s;
+        if (lx >= hMinusX && lx <= hMinusX + stepBtnW && ly >= hY && ly <= hY + stepBtnH) return 6;
+        REAL hBoxX = hMinusX + stepBtnW + 3.0f * s, hBoxW = 32.0f * s;
+        REAL hPlusX = hBoxX + hBoxW + 3.0f * s;
+        if (lx >= hPlusX && lx <= hPlusX + stepBtnW && ly >= hY && ly <= hY + stepBtnH) return 7;
+
+        REAL colonX = hPlusX + stepBtnW + 2.0f * s;
+        REAL mMinusX = colonX + 12.0f * s;
+        if (lx >= mMinusX && lx <= mMinusX + stepBtnW && ly >= hY && ly <= hY + stepBtnH) return 8;
+        REAL mBoxX = mMinusX + stepBtnW + 3.0f * s, mBoxW = 32.0f * s;
+        REAL mPlusX = mBoxX + mBoxW + 3.0f * s;
+        if (lx >= mPlusX && lx <= mPlusX + stepBtnW && ly >= hY && ly <= hY + stepBtnH) return 9;
+
+        REAL ampmX = mPlusX + stepBtnW + 8.0f * s, ampmW = 44.0f * s;
+        if (lx >= ampmX && lx <= ampmX + ampmW && ly >= hY && ly <= hY + stepBtnH) return 10;
+
+        REAL bellX = ampmX + ampmW + 6.0f * s, bellW = 28.0f * s;
+        if (lx >= bellX && lx <= bellX + bellW && ly >= hY && ly <= hY + stepBtnH) return 14;
+    }
+
+    REAL btnH = 34.0f * s;
+    REAL btnY = h - 16.0f * s - btnH;
+    REAL saveW = 145.0f * s;
+    REAL saveX = w - 22.0f * s - saveW;
+    if (lx >= saveX && lx <= saveX + saveW && ly >= btnY && ly <= btnY + btnH) return 11;
+
+    if (g_remState.isExisting) {
+        REAL delW = 85.0f * s;
+        REAL delX = 22.0f * s;
+        if (lx >= delX && lx <= delX + delW && ly >= btnY && ly <= btnY + btnH) return 12;
+    }
+
+    REAL cancelW = 80.0f * s;
+    REAL cancelX = (g_remState.isExisting ? 180.0f : 160.0f) * s;
+    if (lx >= cancelX && lx <= cancelX + cancelW && ly >= btnY && ly <= btnY + btnH) return 13;
+
+    return 0;
+}
+
+LRESULT CALLBACK ReminderDashboardWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_SETCURSOR: {
+        POINT pt; GetCursorPos(&pt);
+        int lx = pt.x - g_remState.dlgX;
+        int ly = pt.y - g_remState.dlgY;
+        float s = g_dpiScale;
+        REAL w = (REAL)g_remState.dlgW;
+        REAL h = (REAL)g_remState.dlgH;
+        int hit = HitTestReminderDashboard(lx, ly, s, w, h);
+        if (hit == 2 || hit == 3) {
+            SetCursor(LoadCursor(NULL, IDC_IBEAM));
+            return TRUE;
+        } else if (hit > 0) {
+            SetCursor(LoadCursor(NULL, IDC_HAND));
+            return TRUE;
+        }
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+        return TRUE;
+    }
+
+    case WM_MOUSEMOVE: {
+        POINT pt; GetCursorPos(&pt);
+        int lx = pt.x - g_remState.dlgX;
+        int ly = pt.y - g_remState.dlgY;
+        float s = g_dpiScale;
+        REAL w = (REAL)g_remState.dlgW;
+        REAL h = (REAL)g_remState.dlgH;
+
+        if (g_remState.isDragging) {
+            g_remState.dlgX = pt.x - g_remState.dragStart.x;
+            g_remState.dlgY = pt.y - g_remState.dragStart.y;
+            RenderReminderDashboard(hWnd);
+            break;
+        }
+
+        int hit = HitTestReminderDashboard(lx, ly, s, w, h);
+        if (hit != g_remState.hoveredCtrl) {
+            g_remState.hoveredCtrl = hit;
+            RenderReminderDashboard(hWnd);
+        }
+        break;
+    }
+
+    case WM_LBUTTONDOWN: {
+        POINT pt; GetCursorPos(&pt);
+        int lx = pt.x - g_remState.dlgX;
+        int ly = pt.y - g_remState.dlgY;
+        float s = g_dpiScale;
+        REAL w = (REAL)g_remState.dlgW;
+        REAL h = (REAL)g_remState.dlgH;
+        int hit = HitTestReminderDashboard(lx, ly, s, w, h);
+
+        if (hit == 0) {
+            g_remState.isDragging = true;
+            SetCapture(hWnd);
+            g_remState.dragStart.x = pt.x - g_remState.dlgX;
+            g_remState.dragStart.y = pt.y - g_remState.dlgY;
+        } else if (hit == 1) {
+            CloseReminderDashboard();
+        } else if (hit == 2) {
+            g_remState.focusedField = 1;
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 3) {
+            g_remState.focusedField = 2;
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 4) {
+            g_remState.hasAlarm = !g_remState.hasAlarm;
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 5) {
+            g_remState.isAllDay = !g_remState.isAllDay;
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 6) {
+            g_remState.hour12 = (g_remState.hour12 <= 1 ? 12 : g_remState.hour12 - 1);
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 7) {
+            g_remState.hour12 = (g_remState.hour12 >= 12 ? 1 : g_remState.hour12 + 1);
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 8) {
+            g_remState.minute = (g_remState.minute < 5 ? 55 : (g_remState.minute / 5 - 1) * 5);
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 9) {
+            g_remState.minute = (g_remState.minute >= 55 ? 0 : (g_remState.minute / 5 + 1) * 5);
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 10) {
+            g_remState.isPM = !g_remState.isPM;
+            RenderReminderDashboard(hWnd);
+        } else if (hit == 14) {
+            Beep(784, 120); Sleep(30); Beep(880, 120); Sleep(30); Beep(1046, 200);
+            PlaySoundW(L"SystemAsterisk", NULL, SND_ALIAS | SND_ASYNC);
+        } else if (hit == 12) {
+            DeleteReminderForBS(g_remState.bsYear, g_remState.bsMonth, g_remState.bsDay);
+            CloseReminderDashboard();
+            if (g_hCalWnd) RenderCalendar(g_hCalWnd);
+        } else if (hit == 13) {
+            CloseReminderDashboard();
+        } else if (hit == 11) {
+            CustomReminder rem;
+            rem.id = (int)time(NULL);
+            rem.bsYear = g_remState.bsYear;
+            rem.bsMonth = g_remState.bsMonth;
+            rem.bsDay = g_remState.bsDay;
+            rem.title = g_remState.title.empty() ? L"Custom Event" : g_remState.title;
+            rem.desc = g_remState.desc;
+            rem.hasAlarm = g_remState.hasAlarm;
+            rem.isAllDay = g_remState.isAllDay;
+            int h24 = g_remState.hour12 % 12;
+            if (g_remState.isPM) h24 += 12;
+            rem.alarmHour = h24;
+            rem.alarmMinute = g_remState.minute;
+            rem.isTriggered = false;
+            AddOrUpdateReminder(rem);
+            CloseReminderDashboard();
+            if (g_hCalWnd) RenderCalendar(g_hCalWnd);
+        }
+        break;
+    }
+
+    case WM_LBUTTONUP:
+        if (g_remState.isDragging) {
+            g_remState.isDragging = false;
+            ReleaseCapture();
+        }
+        break;
+
+    case WM_CHAR: {
+        wchar_t ch = (wchar_t)wParam;
+        if (ch >= 32) {
+            if (g_remState.focusedField == 1 && g_remState.title.length() < 40) {
+                g_remState.title += ch;
+                RenderReminderDashboard(hWnd);
+            } else if (g_remState.focusedField == 2 && g_remState.desc.length() < 90) {
+                g_remState.desc += ch;
+                RenderReminderDashboard(hWnd);
+            }
+        } else if (ch == 8) { // Backspace
+            if (g_remState.focusedField == 1 && !g_remState.title.empty()) {
+                g_remState.title.pop_back();
+                RenderReminderDashboard(hWnd);
+            } else if (g_remState.focusedField == 2 && !g_remState.desc.empty()) {
+                g_remState.desc.pop_back();
+                RenderReminderDashboard(hWnd);
+            }
+        } else if (ch == 13) { // Enter
+            if (g_remState.focusedField == 1) {
+                g_remState.focusedField = 2;
+                RenderReminderDashboard(hWnd);
+            } else {
+                CustomReminder rem;
+                rem.id = (int)time(NULL);
+                rem.bsYear = g_remState.bsYear;
+                rem.bsMonth = g_remState.bsMonth;
+                rem.bsDay = g_remState.bsDay;
+                rem.title = g_remState.title.empty() ? L"Custom Event" : g_remState.title;
+                rem.desc = g_remState.desc;
+                rem.hasAlarm = g_remState.hasAlarm;
+                rem.isAllDay = g_remState.isAllDay;
+                int h24 = g_remState.hour12 % 12;
+                if (g_remState.isPM) h24 += 12;
+                rem.alarmHour = h24;
+                rem.alarmMinute = g_remState.minute;
+                rem.isTriggered = false;
+                AddOrUpdateReminder(rem);
+                CloseReminderDashboard();
+                if (g_hCalWnd) RenderCalendar(g_hCalWnd);
+            }
+        } else if (ch == 9) { // Tab
+            g_remState.focusedField = (g_remState.focusedField == 1) ? 2 : 1;
+            RenderReminderDashboard(hWnd);
+        } else if (ch == 22) { // Ctrl+V
+            if (OpenClipboard(hWnd)) {
+                HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+                if (hData) {
+                    wchar_t* pText = (wchar_t*)GlobalLock(hData);
+                    if (pText) {
+                        if (g_remState.focusedField == 1) {
+                            for (int i = 0; pText[i] && g_remState.title.length() < 40 && pText[i] != L'\r' && pText[i] != L'\n'; i++) {
+                                g_remState.title += pText[i];
+                            }
+                        } else if (g_remState.focusedField == 2) {
+                            for (int i = 0; pText[i] && g_remState.desc.length() < 90 && pText[i] != L'\r' && pText[i] != L'\n'; i++) {
+                                g_remState.desc += pText[i];
+                            }
+                        }
+                        GlobalUnlock(hData);
+                    }
+                }
+                CloseClipboard();
+                RenderReminderDashboard(hWnd);
+            }
+        }
+        break;
+    }
+
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE) {
+            CloseReminderDashboard();
+        }
+        break;
+
+    case WM_TIMER:
+        if (wParam == 201) {
+            g_remState.cursorBlink = !g_remState.cursorBlink;
+            RenderReminderDashboard(hWnd);
+        }
+        break;
+
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            // Keep window accessible
+        }
+        break;
+
+    default:
+        return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+void ShowReminderDashboard(HWND hParent, int bsYear, int bsMonth, int bsDay) {
+    CloseCalendarDatePopup();
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    static bool s_remClassRegistered = false;
+    if (!s_remClassRegistered) {
+        WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
+        wc.lpfnWndProc = ReminderDashboardWndProc;
+        wc.hInstance = hInst;
+        wc.lpszClassName = L"NepaliReminderDashboardClass";
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        RegisterClassExW(&wc);
+        s_remClassRegistered = true;
+    }
+
+    float s = g_dpiScale;
+    g_remState.dlgW = (int)(430 * s);
+    g_remState.dlgH = (int)(385 * s);
+    g_remState.bsYear = bsYear;
+    g_remState.bsMonth = bsMonth;
+    g_remState.bsDay = bsDay;
+
+    CustomReminder* existing = FindReminderForBS(bsYear, bsMonth, bsDay);
+    if (existing) {
+        g_remState.isExisting = true;
+        g_remState.title = existing->title;
+        g_remState.desc = existing->desc;
+        g_remState.hasAlarm = existing->hasAlarm;
+        g_remState.isAllDay = existing->isAllDay;
+        int h = existing->alarmHour;
+        g_remState.isPM = (h >= 12);
+        int h12 = h % 12;
+        if (h12 == 0) h12 = 12;
+        g_remState.hour12 = h12;
+        g_remState.minute = existing->alarmMinute;
+    } else {
+        g_remState.isExisting = false;
+        g_remState.title = L"";
+        g_remState.desc = L"";
+        g_remState.hasAlarm = true;
+        g_remState.isAllDay = false;
+        g_remState.hour12 = 9;
+        g_remState.minute = 0;
+        g_remState.isPM = false;
+    }
+    g_remState.focusedField = 1;
+    g_remState.cursorBlink = true;
+    g_remState.hoveredCtrl = -1;
+    g_remState.isDragging = false;
+
+    HMONITOR hMon = MonitorFromWindow(hParent ? hParent : g_hWnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+
+    RECT rcParent;
+    if (hParent && IsWindow(hParent)) {
+        GetWindowRect(hParent, &rcParent);
+        g_remState.dlgX = rcParent.left + (rcParent.right - rcParent.left - g_remState.dlgW) / 2;
+        g_remState.dlgY = rcParent.top + (rcParent.bottom - rcParent.top - g_remState.dlgH) / 2;
+    } else {
+        g_remState.dlgX = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - g_remState.dlgW) / 2;
+        g_remState.dlgY = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - g_remState.dlgH) / 2;
+    }
+
+    if (g_remState.dlgX < mi.rcWork.left + 10) g_remState.dlgX = mi.rcWork.left + 10;
+    if (g_remState.dlgX + g_remState.dlgW > mi.rcWork.right - 10) g_remState.dlgX = mi.rcWork.right - g_remState.dlgW - 10;
+    if (g_remState.dlgY < mi.rcWork.top + 10) g_remState.dlgY = mi.rcWork.top + 10;
+    if (g_remState.dlgY + g_remState.dlgH > mi.rcWork.bottom - 10) g_remState.dlgY = mi.rcWork.bottom - g_remState.dlgH - 10;
+
+    if (!g_hReminderWnd || !IsWindow(g_hReminderWnd)) {
+        g_hReminderWnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            L"NepaliReminderDashboardClass",
+            L"Reminder Dashboard",
+            WS_POPUP,
+            g_remState.dlgX, g_remState.dlgY, g_remState.dlgW, g_remState.dlgH,
+            NULL, NULL, hInst, NULL
+        );
+    } else {
+        SetWindowPos(g_hReminderWnd, HWND_TOPMOST, g_remState.dlgX, g_remState.dlgY, g_remState.dlgW, g_remState.dlgH, SWP_NOACTIVATE);
+    }
+
+    g_isReminderDashboardOpen = true;
+    SetTimer(g_hReminderWnd, 201, 500, NULL);
+    RenderReminderDashboard(g_hReminderWnd);
+    ShowWindow(g_hReminderWnd, SW_SHOWNOACTIVATE);
+    SetForegroundWindow(g_hReminderWnd);
+    SetFocus(g_hReminderWnd);
+}
+
+void CloseReminderDashboard() {
+    if (g_hReminderWnd && IsWindow(g_hReminderWnd)) {
+        KillTimer(g_hReminderWnd, 201);
+        ShowWindow(g_hReminderWnd, SW_HIDE);
+    }
+    g_isReminderDashboardOpen = false;
+}
+
+// ── Calendar Date Right-Click Action Popup (Custom Fluent Tithify Theme) ─────
+HWND g_hDatePopupWnd = NULL;
+bool g_isDatePopupOpen = false;
+
+struct DatePopupState {
+    int bsYear = 0;
+    int bsMonth = 0;
+    int bsDay = 0;
+    int posX = 0;
+    int posY = 0;
+    int width = 0;
+    int height = 0;
+    int hoveredBtn = 0; // 0=none, 1=primary (Set/Edit), 2=secondary (Delete), 99=close
+    bool hasReminder = false;
+} g_datePopupState;
+
+void CloseCalendarDatePopup() {
+    if (g_hDatePopupWnd && IsWindow(g_hDatePopupWnd)) {
+        ShowWindow(g_hDatePopupWnd, SW_HIDE);
+    }
+    g_isDatePopupOpen = false;
+}
+
+void RenderDatePopup(HWND hWnd) {
+    if (!hWnd) return;
+
+    int rawW = g_datePopupState.width;
+    int rawH = g_datePopupState.height;
+    float s = g_dpiScale;
+
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = rawW;
+    bmi.bmiHeader.biHeight = -rawH;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pBits = NULL;
+    HBITMAP hBitmap = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hBitmap);
+
+    Graphics graphics(hdcMem);
+    graphics.SetSmoothingMode(SmoothingModeHighQuality);
+    graphics.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+
+    REAL w = (REAL)rawW;
+    REAL h = (REAL)rawH;
+
+    // Card background
+    GraphicsPath cardPath;
+    AddRoundedRectangle(cardPath, 0.5f, 0.5f, w - 1.0f, h - 1.0f, 10.0f * s);
+
+    SolidBrush bgBrush(g_isLightTheme ? Color(252, 255, 255, 255) : Color(248, 25, 25, 30));
+    graphics.FillPath(&bgBrush, &cardPath);
+
+    // Tithify brand crimson accent border
+    Pen borderPen(Color(180, 220, 38, 38), 1.2f * s);
+    graphics.DrawPath(&borderPen, &cardPath);
+
+    FontFamily fontFamily(L"Segoe UI");
+    FontFamily fontMDL2(L"Segoe MDL2 Assets");
+    Font headerFont(&fontFamily, 11.5f * s, FontStyleBold, UnitPixel);
+    Font btnFont(&fontFamily, 11.5f * s, FontStyleBold, UnitPixel);
+    Font iconFont(&fontMDL2, 10.5f * s, FontStyleRegular, UnitPixel);
+
+    StringFormat formatNear;
+    formatNear.SetAlignment(StringAlignmentNear);
+    formatNear.SetLineAlignment(StringAlignmentCenter);
+    StringFormat formatCenter;
+    formatCenter.SetAlignment(StringAlignmentCenter);
+    formatCenter.SetLineAlignment(StringAlignmentCenter);
+
+    // Top Header: Date icon & title
+    int mIdx = g_datePopupState.bsMonth - 1;
+    if (mIdx < 0) mIdx = 0; if (mIdx > 11) mIdx = 11;
+    std::wstring headerText = std::wstring(kNepaliMonthNamesEN[mIdx]) + L" " +
+                              std::to_wstring(g_datePopupState.bsDay) + L", " +
+                              std::to_wstring(g_datePopupState.bsYear) + L" (" +
+                              ToDevanagariNum(g_datePopupState.bsDay) + L" " +
+                              kNepaliMonthNamesNP[mIdx] + L")";
+
+    SolidBrush textPrimary(g_isLightTheme ? Color(255, 25, 25, 30) : Color(255, 240, 240, 245));
+    SolidBrush crimsonBrush(Color(255, 220, 38, 38));
+
+    // Bell / alarm icon on header
+    RectF iconRect(12.0f * s, 6.0f * s, 16.0f * s, 22.0f * s);
+    graphics.DrawString(L"\uE7ED", -1, &iconFont, iconRect, &formatCenter, &crimsonBrush);
+
+    RectF titleRect(32.0f * s, 6.0f * s, w - 60.0f * s, 22.0f * s);
+    graphics.DrawString(headerText.c_str(), -1, &headerFont, titleRect, &formatNear, &textPrimary);
+
+    // Close button '✕'
+    RectF closeRect(w - 26.0f * s, 6.0f * s, 20.0f * s, 20.0f * s);
+    SolidBrush closeBrush(g_datePopupState.hoveredBtn == 99 ? Color(255, 220, 38, 38) : (g_isLightTheme ? Color(130, 0, 0, 0) : Color(150, 255, 255, 255)));
+    graphics.DrawString(L"\u2715", -1, &btnFont, closeRect, &formatCenter, &closeBrush);
+
+    // Primary Action Button: "⏰ Set Reminder / Alarm" or "⏰ Edit Reminder / Alarm"
+    REAL btnX = 12.0f * s;
+    REAL btnY = 32.0f * s;
+    REAL btnW = w - 24.0f * s;
+    REAL btnH = 36.0f * s;
+    RectF primRect(btnX, btnY, btnW, btnH);
+
+    GraphicsPath primPath;
+    AddRoundedRectangle(primPath, btnX, btnY, btnW, btnH, 7.0f * s);
+
+    bool isPrimHovered = (g_datePopupState.hoveredBtn == 1);
+    SolidBrush primBg(isPrimHovered ? Color(255, 242, 60, 60) : Color(255, 220, 38, 38));
+    graphics.FillPath(&primBg, &primPath);
+
+    Pen primBorder(isPrimHovered ? Color(255, 255, 110, 110) : Color(255, 195, 25, 25), 1.0f * s);
+    graphics.DrawPath(&primBorder, &primPath);
+
+    SolidBrush primText(Color(255, 255, 255, 255));
+    const wchar_t* primLabel = g_datePopupState.hasReminder ? L"\u23F0  Edit Reminder / Alarm" : L"\u23F0  Set Reminder / Alarm";
+    graphics.DrawString(primLabel, -1, &btnFont, primRect, &formatCenter, &primText);
+
+    // Secondary Action Button (Delete) if reminder exists
+    if (g_datePopupState.hasReminder) {
+        REAL delY = 74.0f * s;
+        REAL delH = 32.0f * s;
+        RectF delRect(btnX, delY, btnW, delH);
+
+        GraphicsPath delPath;
+        AddRoundedRectangle(delPath, btnX, delY, btnW, delH, 6.0f * s);
+
+        bool isDelHovered = (g_datePopupState.hoveredBtn == 2);
+        if (isDelHovered) {
+            SolidBrush delBg(Color(255, 220, 38, 38));
+            graphics.FillPath(&delBg, &delPath);
+            SolidBrush delText(Color(255, 255, 255, 255));
+            graphics.DrawString(L"\u2715  Delete Reminder", -1, &btnFont, delRect, &formatCenter, &delText);
+        } else {
+            SolidBrush delBg(Color(20, 220, 38, 38));
+            graphics.FillPath(&delBg, &delPath);
+            Pen delBorder(Color(120, 220, 38, 38), 1.0f * s);
+            graphics.DrawPath(&delBorder, &delPath);
+            SolidBrush delText(Color(255, 220, 38, 38));
+            graphics.DrawString(L"\u2715  Delete Reminder", -1, &btnFont, delRect, &formatCenter, &delText);
+        }
+    }
+
+    POINT ptDst = { g_datePopupState.posX, g_datePopupState.posY };
+    SIZE sizeDst = { rawW, rawH };
+    POINT ptSrc = { 0, 0 };
+    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    UpdateLayeredWindow(hWnd, hdcScreen, &ptDst, &sizeDst, hdcMem, &ptSrc, 0, &blend, ULW_ALPHA);
+
+    SelectObject(hdcMem, hOldBitmap);
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+}
+
+int HitTestDatePopup(int lx, int ly, float s, float w, float h) {
+    if (lx >= w - 28.0f * s && lx <= w - 4.0f * s && ly >= 4.0f * s && ly <= 28.0f * s) return 99;
+    if (lx >= 12.0f * s && lx <= w - 12.0f * s && ly >= 32.0f * s && ly <= 68.0f * s) return 1;
+    if (g_datePopupState.hasReminder && lx >= 12.0f * s && lx <= w - 12.0f * s && ly >= 74.0f * s && ly <= 106.0f * s) return 2;
+    return 0;
+}
+
+LRESULT CALLBACK DatePopupWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_SETCURSOR: {
+        POINT pt; GetCursorPos(&pt);
+        int lx = pt.x - g_datePopupState.posX;
+        int ly = pt.y - g_datePopupState.posY;
+        float s = g_dpiScale;
+        int hit = HitTestDatePopup(lx, ly, s, (float)g_datePopupState.width, (float)g_datePopupState.height);
+        if (hit > 0) {
+            SetCursor(LoadCursor(NULL, IDC_HAND));
+            return TRUE;
+        }
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+        return TRUE;
+    }
+    case WM_MOUSEMOVE: {
+        POINT pt; GetCursorPos(&pt);
+        int lx = pt.x - g_datePopupState.posX;
+        int ly = pt.y - g_datePopupState.posY;
+        float s = g_dpiScale;
+        int hit = HitTestDatePopup(lx, ly, s, (float)g_datePopupState.width, (float)g_datePopupState.height);
+        if (hit != g_datePopupState.hoveredBtn) {
+            g_datePopupState.hoveredBtn = hit;
+            RenderDatePopup(hWnd);
+        }
+        break;
+    }
+    case WM_LBUTTONDOWN: {
+        POINT pt; GetCursorPos(&pt);
+        int lx = pt.x - g_datePopupState.posX;
+        int ly = pt.y - g_datePopupState.posY;
+        float s = g_dpiScale;
+        int hit = HitTestDatePopup(lx, ly, s, (float)g_datePopupState.width, (float)g_datePopupState.height);
+        if (hit == 1) {
+            int y = g_datePopupState.bsYear;
+            int m = g_datePopupState.bsMonth;
+            int d = g_datePopupState.bsDay;
+            CloseCalendarDatePopup();
+            ShowReminderDashboard(g_hCalWnd, y, m, d);
+        } else if (hit == 2) {
+            int y = g_datePopupState.bsYear;
+            int m = g_datePopupState.bsMonth;
+            int d = g_datePopupState.bsDay;
+            DeleteReminderForBS(y, m, d);
+            CloseCalendarDatePopup();
+            if (g_hCalWnd) RenderCalendar(g_hCalWnd);
+        } else if (hit == 99) {
+            CloseCalendarDatePopup();
+        }
+        break;
+    }
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            HWND hOther = (HWND)lParam;
+            if (hOther != g_hCalWnd && hOther != g_hReminderWnd && hOther != g_hAlarmAlertWnd) {
+                CloseCalendarDatePopup();
+            }
+        }
+        break;
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE) {
+            CloseCalendarDatePopup();
+        }
+        break;
+    case WM_DESTROY:
+        g_hDatePopupWnd = NULL;
+        g_isDatePopupOpen = false;
+        break;
+    default:
+        return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+void ShowCalendarDatePopup(HWND hWndParent, POINT pt, int bsYear, int bsMonth, int bsDay) {
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    static bool s_datePopupRegistered = false;
+    if (!s_datePopupRegistered) {
+        WNDCLASSEXW wc = { sizeof(wc) };
+        wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+        wc.lpfnWndProc = DatePopupWndProc;
+        wc.hInstance = hInst;
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.lpszClassName = L"TithifyDatePopupClass";
+        RegisterClassExW(&wc);
+        s_datePopupRegistered = true;
+    }
+
+    float s = g_dpiScale;
+    bool hasReminder = HasReminderForBS(bsYear, bsMonth, bsDay);
+
+    int popW = (int)(238.0f * s);
+    int popH = (int)((hasReminder ? 116.0f : 78.0f) * s);
+
+    HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+
+    int gapX = (int)(16.0f * s);
+    int gapY = (int)(20.0f * s);
+
+    int posX = pt.x + gapX;
+    if (posX + popW > mi.rcWork.right - 10) {
+        posX = pt.x - popW - gapX;
+    }
+    if (posX < mi.rcWork.left + 10) posX = mi.rcWork.left + 10;
+    if (posX + popW > mi.rcWork.right - 10) posX = mi.rcWork.right - popW - 10;
+
+    int posY = pt.y + gapY;
+    if (posY + popH > mi.rcWork.bottom - 10) {
+        posY = pt.y - popH - gapY;
+    }
+    if (posY < mi.rcWork.top + 10) posY = mi.rcWork.top + 10;
+
+    g_datePopupState.bsYear = bsYear;
+    g_datePopupState.bsMonth = bsMonth;
+    g_datePopupState.bsDay = bsDay;
+    g_datePopupState.hasReminder = hasReminder;
+    g_datePopupState.posX = posX;
+    g_datePopupState.posY = posY;
+    g_datePopupState.width = popW;
+    g_datePopupState.height = popH;
+    g_datePopupState.hoveredBtn = 0;
+
+    if (!g_hDatePopupWnd || !IsWindow(g_hDatePopupWnd)) {
+        g_hDatePopupWnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            L"TithifyDatePopupClass",
+            L"Tithify Date Action",
+            WS_POPUP,
+            posX, posY, popW, popH,
+            hWndParent, NULL, hInst, NULL
+        );
+    } else {
+        SetWindowPos(g_hDatePopupWnd, HWND_TOPMOST, posX, posY, popW, popH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+
+    g_isDatePopupOpen = true;
+    RenderDatePopup(g_hDatePopupWnd);
+    ShowWindow(g_hDatePopupWnd, SW_SHOWNOACTIVATE);
+    SetWindowPos(g_hDatePopupWnd, HWND_TOPMOST, posX, posY, popW, popH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
 // ── Calendar Popup State & Engine ────────────────────────────────────────────
 HWND g_hCalWnd = NULL;
 bool g_isCalendarOpen = false;
@@ -1473,6 +3122,21 @@ RECT g_rcCalEventCard = { 0, 0, 0, 0 };
 bool g_calHasEvent = false;
 
 bool IsPointInCalendar(POINT pt) {
+    if (g_isDatePopupOpen && g_hDatePopupWnd && IsWindowVisible(g_hDatePopupWnd)) {
+        RECT rc;
+        GetWindowRect(g_hDatePopupWnd, &rc);
+        if (PtInRect(&rc, pt)) return true;
+    }
+    if (g_isReminderDashboardOpen && g_hReminderWnd && IsWindowVisible(g_hReminderWnd)) {
+        RECT rc;
+        GetWindowRect(g_hReminderWnd, &rc);
+        if (PtInRect(&rc, pt)) return true;
+    }
+    if (g_isAlarmAlertOpen && g_hAlarmAlertWnd && IsWindowVisible(g_hAlarmAlertWnd)) {
+        RECT rc;
+        GetWindowRect(g_hAlarmAlertWnd, &rc);
+        if (PtInRect(&rc, pt)) return true;
+    }
     if (!g_isCalendarOpen) return false;
     if (PtInRect(&g_rcCalCard, pt)) return true;
     if (g_calHasEvent && PtInRect(&g_rcCalEventCard, pt)) return true;
@@ -1485,7 +3149,9 @@ enum CalendarButtonId {
     BTN_NEXT_MONTH = 103,
     BTN_TODAY = 105,
     BTN_CLOSE = 106,
-    BTN_RETRY_FETCH = 107
+    BTN_RETRY_FETCH = 107,
+    BTN_SET_REMINDER = 108,
+    BTN_DELETE_REMINDER = 109
 };
 
 enum CalendarAnimState {
@@ -1505,7 +3171,7 @@ void HideCalendarImmediate();
 void ShowCalendar(HWND hWidgetWnd);
 void ToggleCalendar(HWND hWidgetWnd);
 
-void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrideY = -1) {
+void RenderCalendar(HWND hWnd, BYTE alpha, int overrideX, int overrideY) {
     if (!hWnd) return;
 
     // Enforce calendar strictly to current BS year
@@ -1523,16 +3189,17 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
     EnsureHolidaysLoadedForCurrentYear(g_calYear);
 
     const NepaliHoliday* selHoliday = GetHolidayForBS(g_calYear, g_calMonth, g_calSelectedDay);
+    CustomReminder* selReminder = FindReminderForBS(g_calYear, g_calMonth, g_calSelectedDay);
     bool isOfflineMode = (g_holidayFetchState == FETCH_ERROR_OFFLINE && g_currentYearHolidays.empty());
     bool isDownloading = (g_holidayFetchState == FETCH_DOWNLOADING && g_currentYearHolidays.empty());
-    bool hasEvent = (selHoliday != NULL || isOfflineMode || isDownloading);
+    bool hasEvent = (selHoliday != NULL || selReminder != NULL || isOfflineMode || isDownloading);
 
     HMONITOR hMon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = { sizeof(mi) };
     GetMonitorInfo(hMon, &mi);
 
     int baseW = 420;
-    int baseH = 440;
+    int baseH = 468;
     float s = g_dpiScale;
 
     float flyoutW = 380.0f;
@@ -1773,8 +3440,58 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
                                         (isHoliday ? Color(255, 235, 35, 65) : Color(255, 0, 120, 215)));
                     graphics.FillEllipse(&dotBrush, dotX, dotY, dotDiam, dotDiam);
                 }
+
+                // Indicator dot for Custom Reminder / Alarm
+                bool hasReminder = HasReminderForBS(g_calYear, g_calMonth, dayNum);
+                if (hasReminder) {
+                    float rDotDiam = 5.0f * s;
+                    float rDotX = cellRect.X + cellRect.Width - rDotDiam - 3.5f * s;
+                    float rDotY = cellRect.Y + 3.5f * s;
+                    SolidBrush remDotBrush(Color(255, 245, 175, 25)); // Amber/gold reminder accent dot
+                    graphics.FillEllipse(&remDotBrush, rDotX, rDotY, rDotDiam, rDotDiam);
+                }
             }
         }
+    }
+
+    // ── Tithi Bar (centered, no box) ─────────────────────────────────────────
+    {
+        int tAdY = 0, tAdM = 0, tAdD = 0, tDow = 0;
+        BSToAD(g_calYear, g_calMonth, g_calSelectedDay, tAdY, tAdM, tAdD, tDow);
+
+        std::wstring moonStr  = L"\u263D  ";
+        std::wstring tithiVal = GetTithiString(tAdY, tAdM, tAdD);
+
+        // Center vertically in bottom space (426..468 → midpoint 447)
+        float barCenterY = 447.0f * s;
+        float textH      = 22.0f * s;
+        float textY      = barCenterY - textH / 2.0f;
+
+        Font fontTithi(&fontFamily, 15.0f * s, FontStyleBold, UnitPixel);
+
+        // Measure moon + tithi together to center the whole string
+        std::wstring fullStr = moonStr + tithiVal;
+        RectF measureRect(0, 0, (float)baseW * s, textH);
+        RectF measured;
+        graphics.MeasureString(fullStr.c_str(), -1, &fontTithi, measureRect, &formatCenter, &measured);
+
+        float startX = ((float)baseW * s - measured.Width) / 2.0f;
+
+        // Draw moon in gray
+        SolidBrush moonBrush(g_isLightTheme ? Color(180, 120, 120, 120) : Color(180, 160, 160, 160));
+        RectF moonRect(startX, textY, measured.Width, textH);
+        // Draw just the moon portion
+        RectF moonOnly(startX, textY, (float)baseW * s, textH);
+        graphics.DrawString(moonStr.c_str(), -1, &fontTithi, moonOnly, &formatNear, &moonBrush);
+
+        // Measure moon width so tithi starts right after
+        RectF moonMeasured;
+        graphics.MeasureString(moonStr.c_str(), -1, &fontTithi, measureRect, &formatNear, &moonMeasured);
+
+        // Draw tithi value in red
+        SolidBrush tithiTextBrush(g_isLightTheme ? Color(255, 30, 30, 30) : Color(255, 255, 255, 255));
+        RectF tithiRect(startX + moonMeasured.Width, textY, (float)baseW * s, textH);
+        graphics.DrawString(tithiVal.c_str(), -1, &fontTithi, tithiRect, &formatNear, &tithiTextBrush);
     }
 
     graphics.ResetTransform();
@@ -1811,6 +3528,8 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
         bool isPubHol = false;
         bool isOffline = false;
 
+        bool isCustomEvent = (selReminder != NULL);
+
         if (isOfflineMode) {
             isOffline = true;
             cardTitleNP = L"\u0907\u0928\u094D\u091F\u0930\u0928\u0947\u091F \u091C\u0921\u093E\u0928 \u0906\u0935\u0936\u094D\u092F\u0915";
@@ -1822,6 +3541,16 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
             cardTitleEN = L"Downloading Holidays Schedule...";
             cardDescription = L"Fetching official Bikram Sambat " + std::to_wstring(g_calYear) +
                               L" public holidays and events in background. Please wait a moment...";
+        } else if (selReminder && selHoliday) {
+            cardTitleNP = selReminder->title;
+            cardTitleEN = selReminder->isAllDay ? (L"All-Day Event \u2022 " + selHoliday->titleEN) : (L"Alarm " + FormatAlarmTime(selReminder->alarmHour, selReminder->alarmMinute) + L" \u2022 " + selHoliday->titleEN);
+            cardDescription = (selReminder->desc.empty() ? L"" : (selReminder->desc + L"\n\n")) +
+                              L"\u2022 Public Event: " + selHoliday->titleNP + L"\n" + selHoliday->description;
+            isPubHol = selHoliday->isPublicHoliday;
+        } else if (selReminder) {
+            cardTitleNP = selReminder->title;
+            cardTitleEN = selReminder->isAllDay ? L"All-Day Scheduled Event" : (L"Alarm set for " + FormatAlarmTime(selReminder->alarmHour, selReminder->alarmMinute));
+            cardDescription = selReminder->desc.empty() ? L"Custom event / reminder set for this date." : selReminder->desc;
         } else if (selHoliday) {
             cardTitleNP = selHoliday->titleNP;
             cardTitleEN = selHoliday->titleEN;
@@ -1838,9 +3567,9 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
         graphics.MeasureString(cardDescription.c_str(), -1, &fontDetailL3, layoutDesc, &formatDesc, &measuredDesc);
 
         float neededDescH = measuredDesc.Height;
-        float dynamicH = 145.0f + (neededDescH / s) + (isOffline ? 45.0f : 20.0f);
-        if (dynamicH < 220.0f) dynamicH = 220.0f;
-        if (dynamicH > 380.0f) dynamicH = 380.0f;
+        float dynamicH = 145.0f + (neededDescH / s) + (isOffline ? 45.0f : 45.0f);
+        if (dynamicH < 230.0f) dynamicH = 230.0f;
+        if (dynamicH > 400.0f) dynamicH = 400.0f;
         fh = dynamicH * s;
 
         GraphicsPath bubblePath;
@@ -1948,6 +3677,13 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
             graphics.DrawPath(&badgePen, &badgePath);
             SolidBrush blueText(Color(255, 60, 140, 255));
             graphics.DrawString(L"\u21BB SYNCING", -1, &fontBadge, badgeRect, &formatCenter, &blueText);
+        } else if (isCustomEvent) {
+            SolidBrush badgeBg(Color(50, 245, 175, 25));
+            graphics.FillPath(&badgeBg, &badgePath);
+            Pen badgePen(Color(180, 245, 175, 25), 1.0f * s);
+            graphics.DrawPath(&badgePen, &badgePath);
+            SolidBrush goldText(Color(255, 245, 175, 25));
+            graphics.DrawString(L"\u23F0 REMINDER", -1, &fontBadge, badgeRect, &formatCenter, &goldText);
         } else {
             SolidBrush badgeBg(g_isLightTheme ? Color(40, 0, 56, 147) : Color(60, 0, 56, 147));
             graphics.FillPath(&badgeBg, &badgePath);
@@ -1976,8 +3712,54 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
 
         // Retry button if offline
         if (isOffline) {
-            RectF retryBtnRect(fx + 26.0f * s, fy + fh - 50.0f * s, 140.0f * s, 30.0f * s);
+            RectF retryBtnRect(fx + 26.0f * s, fy + fh - 44.0f * s, 140.0f * s, 30.0f * s);
             DrawIconButton(graphics, retryBtnRect, L"\u21BB Retry / \u092A\u0941\u0928\u0903 \u092A\u094D\u0930\u092F\u093E\u0938", g_hoveredBtn == BTN_RETRY_FETCH, g_isLightTheme, fontButton);
+        } else if (!isDownloading) {
+            // Tithify Themed Set / Edit Reminder Button in Flyout
+            bool isRemHovered = (g_hoveredBtn == BTN_SET_REMINDER);
+            REAL remW = (isCustomEvent ? 150.0f : 175.0f) * s;
+            REAL remH = 30.0f * s;
+            REAL remX = fx + 26.0f * s;
+            REAL remY = fy + fh - 44.0f * s;
+            RectF remBtnRect(remX, remY, remW, remH);
+
+            GraphicsPath remPath;
+            AddRoundedRectangle(remPath, remX, remY, remW, remH, 6.0f * s);
+
+            SolidBrush remBg(isRemHovered ? Color(255, 242, 60, 60) : Color(255, 220, 38, 38));
+            graphics.FillPath(&remBg, &remPath);
+
+            Pen remBorder(isRemHovered ? Color(255, 255, 110, 110) : Color(255, 195, 25, 25), 1.0f * s);
+            graphics.DrawPath(&remBorder, &remPath);
+
+            SolidBrush remText(Color(255, 255, 255, 255));
+            const wchar_t* remLabel = isCustomEvent ? L"\u23F0  Edit Reminder" : L"\u23F0  Set Reminder";
+            graphics.DrawString(remLabel, -1, &fontButton, remBtnRect, &formatCenter, &remText);
+
+            // If it's a custom event, also show a Tithify Delete Reminder button
+            if (isCustomEvent) {
+                REAL delW = 105.0f * s;
+                REAL delX = remX + remW + 10.0f * s;
+                RectF delBtnRect(delX, remY, delW, remH);
+
+                GraphicsPath delPath;
+                AddRoundedRectangle(delPath, delX, remY, delW, remH, 6.0f * s);
+
+                bool isDelHovered = (g_hoveredBtn == BTN_DELETE_REMINDER);
+                if (isDelHovered) {
+                    SolidBrush delBg(Color(255, 220, 38, 38));
+                    graphics.FillPath(&delBg, &delPath);
+                    SolidBrush delText(Color(255, 255, 255, 255));
+                    graphics.DrawString(L"\u2715  Delete", -1, &fontButton, delBtnRect, &formatCenter, &delText);
+                } else {
+                    SolidBrush delBg(Color(20, 220, 38, 38));
+                    graphics.FillPath(&delBg, &delPath);
+                    Pen delBorder(Color(120, 220, 38, 38), 1.0f * s);
+                    graphics.DrawPath(&delBorder, &delPath);
+                    SolidBrush delText(Color(255, 220, 38, 38));
+                    graphics.DrawString(L"\u2715  Delete", -1, &fontButton, delBtnRect, &formatCenter, &delText);
+                }
+            }
         }
     }
 
@@ -1999,6 +3781,15 @@ void RenderCalendar(HWND hWnd, BYTE alpha = 255, int overrideX = -1, int overrid
 
 LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+    case WM_SETCURSOR: {
+        if (g_hoveredBtn != BTN_NONE || g_hoveredCell != -1) {
+            SetCursor(LoadCursor(NULL, IDC_HAND));
+            return TRUE;
+        }
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+        return TRUE;
+    }
+
     case WM_MOUSEMOVE: {
         int x = LOWORD(lParam);
         int y = HIWORD(lParam);
@@ -2010,7 +3801,8 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         int newBtn = BTN_NONE;
         int newCell = -1;
 
-        float retryX = (g_flyoutOnLeft ? (6.0f + 26.0f) : (420.0f + 12.0f + 26.0f));
+        float flyoutBtnX = (g_flyoutOnLeft ? (6.0f + 26.0f) : (420.0f + 12.0f + 26.0f));
+        float flyoutBtnY = 468.0f - 44.0f;
 
         if (bx >= 18.0f && bx <= 54.0f && by >= 60.0f && by <= 94.0f) {
             newBtn = BTN_PREV_MONTH;
@@ -2021,10 +3813,24 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         } else if (bx >= 374.0f && bx <= 404.0f && by >= 14.0f && by <= 44.0f) {
             newBtn = BTN_CLOSE;
         } else if (g_holidayFetchState == FETCH_ERROR_OFFLINE && g_currentYearHolidays.empty() &&
-                   (x / s) >= retryX && (x / s) <= (retryX + 140.0f) &&
-                   by >= 190.0f && by <= 270.0f) {
+                   (x / s) >= flyoutBtnX && (x / s) <= (flyoutBtnX + 140.0f) &&
+                   (y / s) >= (flyoutBtnY - 6.0f) && (y / s) <= (flyoutBtnY + 36.0f)) {
             newBtn = BTN_RETRY_FETCH;
-        } else if (bx >= 18.0f && bx < 403.0f && by >= 138.0f && by < 426.0f) {
+        } else if (g_calHasEvent && !(g_holidayFetchState == FETCH_ERROR_OFFLINE && g_currentYearHolidays.empty()) &&
+                   g_holidayFetchState != FETCH_DOWNLOADING) {
+            bool hasCustom = (FindReminderForBS(g_calYear, g_calMonth, g_calSelectedDay) != NULL);
+            float remW = hasCustom ? 150.0f : 175.0f;
+            if ((x / s) >= flyoutBtnX && (x / s) <= (flyoutBtnX + remW) &&
+                (y / s) >= (flyoutBtnY - 6.0f) && (y / s) <= (flyoutBtnY + 36.0f)) {
+                newBtn = BTN_SET_REMINDER;
+            } else if (hasCustom &&
+                       (x / s) >= (flyoutBtnX + remW + 10.0f) && (x / s) <= (flyoutBtnX + remW + 10.0f + 105.0f) &&
+                       (y / s) >= (flyoutBtnY - 6.0f) && (y / s) <= (flyoutBtnY + 36.0f)) {
+                newBtn = BTN_DELETE_REMINDER;
+            }
+        }
+
+        if (newBtn == BTN_NONE && bx >= 18.0f && bx < 403.0f && by >= 138.0f && by < 426.0f) {
             int c = (int)((bx - 18.0f) / 55.0f);
             int r = (int)((by - 138.0f) / 48.0f);
             if (c >= 0 && c < 7 && r >= 0 && r < 6) {
@@ -2060,13 +3866,18 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         break;
 
     case WM_LBUTTONDOWN: {
+        if (g_isDatePopupOpen) {
+            CloseCalendarDatePopup();
+        }
+
         int x = LOWORD(lParam);
         int y = HIWORD(lParam);
         float s = g_dpiScale;
         float calOffset = (g_flyoutOnLeft ? (380.0f + 12.0f) : 0.0f);
         float bx = x / s - calOffset;
         float by = y / s;
-        float retryX = (g_flyoutOnLeft ? (6.0f + 26.0f) : (420.0f + 12.0f + 26.0f));
+        float flyoutBtnX = (g_flyoutOnLeft ? (6.0f + 26.0f) : (420.0f + 12.0f + 26.0f));
+        float flyoutBtnY = 468.0f - 44.0f;
 
         if (bx >= 18.0f && bx <= 54.0f && by >= 60.0f && by <= 94.0f) {
             if (g_calMonth > 1) {
@@ -2089,9 +3900,21 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             HideCalendar();
         } else if (g_hoveredBtn == BTN_RETRY_FETCH ||
                   (g_holidayFetchState == FETCH_ERROR_OFFLINE && g_currentYearHolidays.empty() &&
-                   (x / s) >= retryX && (x / s) <= (retryX + 140.0f) &&
-                   by >= 190.0f && by <= 270.0f)) {
+                   (x / s) >= flyoutBtnX && (x / s) <= (flyoutBtnX + 140.0f) &&
+                   (y / s) >= (flyoutBtnY - 6.0f) && (y / s) <= (flyoutBtnY + 36.0f))) {
             EnsureHolidaysLoadedForCurrentYear(g_calYear, true);
+            RenderCalendar(hWnd);
+        } else if (g_hoveredBtn == BTN_SET_REMINDER ||
+                  (g_calHasEvent && !(g_holidayFetchState == FETCH_ERROR_OFFLINE && g_currentYearHolidays.empty()) &&
+                   g_holidayFetchState != FETCH_DOWNLOADING &&
+                   (x / s) >= flyoutBtnX && (x / s) <= (flyoutBtnX + (FindReminderForBS(g_calYear, g_calMonth, g_calSelectedDay) ? 150.0f : 175.0f)) &&
+                   (y / s) >= (flyoutBtnY - 6.0f) && (y / s) <= (flyoutBtnY + 36.0f))) {
+            ShowReminderDashboard(hWnd, g_calYear, g_calMonth, g_calSelectedDay);
+        } else if (g_hoveredBtn == BTN_DELETE_REMINDER ||
+                  (g_calHasEvent && FindReminderForBS(g_calYear, g_calMonth, g_calSelectedDay) &&
+                   (x / s) >= (flyoutBtnX + 160.0f) && (x / s) <= (flyoutBtnX + 160.0f + 105.0f) &&
+                   (y / s) >= (flyoutBtnY - 6.0f) && (y / s) <= (flyoutBtnY + 36.0f))) {
+            DeleteReminderForBS(g_calYear, g_calMonth, g_calSelectedDay);
             RenderCalendar(hWnd);
         } else if (bx >= 18.0f && bx < 403.0f && by >= 138.0f && by < 426.0f) {
             int c = (int)((bx - 18.0f) / 55.0f);
@@ -2104,6 +3927,38 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                 if (dayNum >= 1 && dayNum <= totalD) {
                     g_calSelectedDay = dayNum;
                     RenderCalendar(hWnd);
+                }
+            }
+        }
+        break;
+    }
+
+    case WM_RBUTTONDOWN:
+        return 0;
+
+    case WM_RBUTTONUP: {
+        int x = LOWORD(lParam);
+        int y = HIWORD(lParam);
+        float s = g_dpiScale;
+        float calOffset = (g_flyoutOnLeft ? (380.0f + 12.0f) : 0.0f);
+        float bx = x / s - calOffset;
+        float by = y / s;
+
+        if (bx >= 18.0f && bx < 403.0f && by >= 138.0f && by < 426.0f) {
+            int c = (int)((bx - 18.0f) / 55.0f);
+            int r = (int)((by - 138.0f) / 48.0f);
+            if (c >= 0 && c < 7 && r >= 0 && r < 6) {
+                int cellIdx = r * 7 + c;
+                int startDow = GetBSMonthStartDayOfWeek(g_calYear, g_calMonth);
+                int totalD = GetBSDaysInMonth(g_calYear, g_calMonth);
+                int dayNum = cellIdx - startDow + 1;
+                if (dayNum >= 1 && dayNum <= totalD) {
+                    g_calSelectedDay = dayNum;
+                    RenderCalendar(hWnd);
+
+                    POINT screenPt;
+                    GetCursorPos(&screenPt);
+                    ShowCalendarDatePopup(hWnd, screenPt, g_calYear, g_calMonth, dayNum);
                 }
             }
         }
@@ -2159,19 +4014,38 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                 }
             }
         }
+        break;
+
     case WM_ACTIVATE:
         if (LOWORD(wParam) == WA_INACTIVE) {
+            HWND hOther = (HWND)lParam;
+            if (hOther && (hOther == g_hDatePopupWnd || hOther == g_hReminderWnd || hOther == g_hAlarmAlertWnd)) {
+                break;
+            }
+            if (g_isReminderDashboardOpen || g_isAlarmAlertOpen) {
+                break;
+            }
             if (GetTickCount() - g_calAnimStartTime > 300) {
+                if (g_isDatePopupOpen) CloseCalendarDatePopup();
                 HideCalendar();
             }
         }
         break;
 
-    case WM_KILLFOCUS:
+    case WM_KILLFOCUS: {
+        HWND hNew = (HWND)wParam;
+        if (hNew && (hNew == g_hDatePopupWnd || hNew == g_hReminderWnd || hNew == g_hAlarmAlertWnd)) {
+            break;
+        }
+        if (g_isReminderDashboardOpen || g_isAlarmAlertOpen) {
+            break;
+        }
         if (GetTickCount() - g_calAnimStartTime > 300) {
+            if (g_isDatePopupOpen) CloseCalendarDatePopup();
             HideCalendar();
         }
         break;
+    }
 
     case WM_DESTROY:
         g_hCalWnd = NULL;
@@ -2184,6 +4058,7 @@ LRESULT CALLBACK CalendarWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
 }
 
 void HideCalendarImmediate() {
+    CloseCalendarDatePopup();
     g_isCalendarOpen = false;
     g_calAnimState = CAL_ANIM_CLOSED;
     g_lastCalCloseTime = GetTickCount();
@@ -2194,6 +4069,7 @@ void HideCalendarImmediate() {
 }
 
 void HideCalendar() {
+    CloseCalendarDatePopup();
     if (!g_isCalendarOpen || g_calAnimState == CAL_ANIM_CLOSED) return;
     if (g_calAnimState == CAL_ANIM_CLOSING) return;
 
@@ -2222,7 +4098,7 @@ void ShowCalendar(HWND hWidgetWnd) {
     EnsureHolidaysLoadedForCurrentYear(cy);
 
     int calW = (int)(420 * g_dpiScale);
-    int calH = (int)(440 * g_dpiScale);
+    int calH = (int)(468 * g_dpiScale);
 
     RECT rcWidget;
     GetWindowRect(hWidgetWnd, &rcWidget);
@@ -2495,7 +4371,10 @@ void RemoveTrayIcon() {
 void HideCustomMenu() {
     if (g_hMenuWnd && IsWindowVisible(g_hMenuWnd)) {
         ShowWindow(g_hMenuWnd, SW_HIDE);
-        g_isMenuOpen = false;
+        g_isMenuOpen    = false;
+        g_bgFlyoutOpen  = false;
+        g_bgFlyoutHover = -1;
+        g_bgSliderDrag  = false;
     }
 }
 
@@ -2503,7 +4382,8 @@ void RenderCustomMenu(HWND hWnd) {
     if (!hWnd) return;
 
     float s = g_dpiScale;
-    int rawWidth = (int)(385 * s);
+    // When BG flyout is open expand bitmap: 385 menu + 12 arrow + 200 flyout = 597
+    int rawWidth  = g_bgFlyoutOpen ? (int)(597 * s) : (int)(385 * s);
     int rawHeight = (int)(260 * s);
 
     HDC hdcScreen = GetDC(NULL);
@@ -2530,13 +4410,13 @@ void RenderCustomMenu(HWND hWnd) {
 
     // ── Main Background Panel Card ───────────────────────────────────────────
     Color bgCardColor = g_isLightTheme ? Color(248, 245, 245, 248) : Color(245, 24, 24, 28);
-    Color borderColor = g_isLightTheme ? Color(60, 0, 0, 0) : Color(60, 255, 255, 255);
+    Color borderColor = g_isLightTheme ? Color(180, 200, 0, 0) : Color(200, 220, 0, 0);
 
     SolidBrush cardBrush(bgCardColor);
     GraphicsPath cardPath;
     REAL r = 14.0f * s;
     REAL d = r * 2.0f;
-    REAL w = (REAL)rawWidth;
+    REAL w = 385.0f * s;   // card is always 385px wide; bitmap may be wider when flyout is open
     REAL h = (REAL)rawHeight;
     cardPath.AddArc(0.0f, 0.0f, d, d, 180.0f, 90.0f);
     cardPath.AddArc(w - d, 0.0f, d, d, 270.0f, 90.0f);
@@ -2591,20 +4471,34 @@ void RenderCustomMenu(HWND hWnd) {
     graphics.DrawLine(&dividerPen, 172.0f * s, 48.0f * s, 172.0f * s, h - 16.0f * s);
 
     // ── Left Column: ON / OFF Toggles ────────────────────────────────────────
-    Font labelFont(&fontFamily, 12.5f * s, FontStyleBold, UnitPixel);
+    Font labelFont(&fontFamily, 12.0f * s, FontStyleBold, UnitPixel);
 
     struct ToggleItem {
         const wchar_t* label;
         bool state;
-    } toggles[3] = {
-        { L"Run at Startup", IsStartupEnabled() },
-        { L"Show Day", g_showDay },
-        { L"Lock Position", !g_setupMode }
     };
+    ToggleItem toggles[4];
+    int numToggles = 0;
+    toggles[numToggles++] = { L"Run at Startup", IsStartupEnabled() };
+    toggles[numToggles++] = { L"Show Day", g_showDay };
+    toggles[numToggles++] = { L"Lock Position", !g_setupMode };
+    if (!g_isOnTaskbar && !g_setupMode) {
+        toggles[numToggles++] = { L"Z-Index", g_zIndexDesktop };
+    }
 
-    for (int i = 0; i < 3; i++) {
-        REAL rowY = (52.0f + i * 62.0f) * s;
-        REAL rowH = 48.0f * s;
+    for (int i = 0; i < numToggles; i++) {
+        REAL rowY, rowH, pillH, knobSize;
+        if (numToggles == 4) {
+            rowY = (47.0f + i * 49.0f) * s;
+            rowH = 42.0f * s;
+            pillH = 22.0f * s;
+            knobSize = 18.0f * s;
+        } else {
+            rowY = (52.0f + i * 62.0f) * s;
+            rowH = 48.0f * s;
+            pillH = 24.0f * s;
+            knobSize = 20.0f * s;
+        }
 
         // Label (tight gap before toggle)
         RectF textRect(16.0f * s, rowY, 102.0f * s, rowH);
@@ -2612,9 +4506,8 @@ void RenderCustomMenu(HWND hWnd) {
 
         // iOS Toggle Pill Switch
         REAL pillX = 120.0f * s;
-        REAL pillY = rowY + (rowH - 24.0f * s) / 2.0f;
+        REAL pillY = rowY + (rowH - pillH) / 2.0f;
         REAL pillW = 44.0f * s;
-        REAL pillH = 24.0f * s;
         REAL pillR = pillH / 2.0f;
         REAL pillD = pillR * 2.0f;
 
@@ -2623,12 +4516,11 @@ void RenderCustomMenu(HWND hWnd) {
         pillPath.AddArc(pillX + pillW - pillD, pillY, pillD, pillD, 270.0f, 180.0f);
         pillPath.CloseFigure();
 
-        Color pillBg = toggles[i].state ? Color(255, 52, 199, 89) : (g_isLightTheme ? Color(255, 200, 200, 204) : Color(255, 90, 90, 95));
+        Color pillBg = toggles[i].state ? Color(255, 210, 40, 40) : (g_isLightTheme ? Color(255, 200, 200, 204) : Color(255, 90, 90, 95));
         SolidBrush pillBrush(pillBg);
         graphics.FillPath(&pillBrush, &pillPath);
 
         // Circular Knob
-        REAL knobSize = 20.0f * s;
         REAL knobY = pillY + (pillH - knobSize) / 2.0f;
         REAL knobX = toggles[i].state ? (pillX + pillW - knobSize - 2.0f * s) : (pillX + 2.0f * s);
 
@@ -2659,10 +4551,13 @@ void RenderCustomMenu(HWND hWnd) {
         REAL btnW = 185.0f * s;
         REAL btnH = 33.0f * s;
 
-        bool isHovered = (g_menuHoverIndex == (3 + i));
+        bool isHovered  = (g_menuHoverIndex == (3 + i));
+        bool isBgActive = (g_bgFlyoutOpen && buttons[i].id == 101);
 
         Color btnBg;
-        if (g_isLightTheme) {
+        if (isBgActive) {
+            btnBg = Color(90, 220, 38, 38);
+        } else if (g_isLightTheme) {
             btnBg = isHovered ? Color(60, 0, 0, 0) : Color(25, 0, 0, 0);
         } else {
             btnBg = isHovered ? Color(80, 255, 255, 255) : Color(35, 255, 255, 255);
@@ -2689,8 +4584,218 @@ void RenderCustomMenu(HWND hWnd) {
         graphics.DrawString(buttons[i].label, -1, &btnFont, btnTextRect, &formatNear, &textBrush);
     }
 
+    // ── BG Colour Flyout Panel ────────────────────────────────────────────────
+    if (g_bgFlyoutOpen) {
+        // Layout constants (all unscaled px, multiply by s for actual pixels)
+        // Menu card = 385 wide. Arrow = 12. Flyout card = 200. Total = 597.
+        const float arrowW  = 12.0f;
+        const float flyW    = 200.0f;
+        const float flyX    = 385.0f;   // bitmap-local x where arrow starts
+        const float cardX   = flyX + arrowW;
+        const float cardW   = flyW;
+        const float cardH   = 260.0f;   // same height as menu
+        const float cardR   = 12.0f;
+
+        // Speech-bubble arrow tip aligned to "Background Color" button centre
+        // Button index 1 in right column: Y = 48 + 1*39 = 87, H = 33 → centre = 103.5
+        float tipY  = 103.5f;
+        float topY  = tipY - 9.0f;
+        float botY  = tipY + 9.0f;
+
+        // ── Card + arrow path ──
+        GraphicsPath flyPath;
+        float cr = cardR * s, cd = cr * 2.0f;
+        float cx = cardX * s, cy2 = 1.0f * s, cw = cardW * s, ch = cardH * s;
+        flyPath.AddArc(cx, cy2, cd, cd, 180, 90);
+        flyPath.AddArc(cx + cw - cd, cy2, cd, cd, 270, 90);
+        flyPath.AddArc(cx + cw - cd, cy2 + ch - cd, cd, cd, 0, 90);
+        flyPath.AddArc(cx, cy2 + ch - cd, cd, cd, 90, 90);
+        flyPath.AddLine(cx, cy2 + ch - cr, cx, botY * s);
+        flyPath.AddLine(cx, botY * s, flyX * s, tipY * s);
+        flyPath.AddLine(flyX * s, tipY * s, cx, topY * s);
+        flyPath.AddLine(cx, topY * s, cx, cy2 + cr);
+        flyPath.CloseFigure();
+
+        SolidBrush flyBg(g_isLightTheme ? Color(252, 250, 250, 252) : Color(252, 26, 26, 32));
+        graphics.FillPath(&flyBg, &flyPath);
+        Pen flyBorder(g_isLightTheme ? Color(50, 0, 0, 0) : Color(60, 255, 255, 255), 1.0f * s);
+        graphics.DrawPath(&flyBorder, &flyPath);
+
+        // ── Text brushes / fonts ──
+        FontFamily ffam(L"Segoe UI");
+        Font flyTitleFont(&ffam, 12.5f * s, FontStyleBold,    UnitPixel);
+        Font flySubFont  (&ffam, 10.0f * s, FontStyleRegular, UnitPixel);
+        Font swLblFont   (&ffam,  9.0f * s, FontStyleRegular, UnitPixel);
+        Font sldrLblFont (&ffam, 10.0f * s, FontStyleBold,    UnitPixel);
+
+        SolidBrush brPrimary(g_isLightTheme ? Color(255, 20,  20,  20 ) : Color(255, 250, 250, 255));
+        SolidBrush brSub    (g_isLightTheme ? Color(160, 80,  80,  80 ) : Color(160, 170, 170, 180));
+
+        StringFormat sfLeft, sfCtr;
+        sfLeft.SetAlignment(StringAlignmentNear);   sfLeft.SetLineAlignment(StringAlignmentCenter);
+        sfCtr .SetAlignment(StringAlignmentCenter); sfCtr .SetLineAlignment(StringAlignmentCenter);
+
+        float ix = (cardX + 14.0f) * s;
+        float iw = (cardW - 28.0f) * s;
+
+        // ── Header ──
+        RectF rTitle(ix, 12.0f * s, iw, 20.0f * s);
+        graphics.DrawString(L"\uE790  Background", -1, &flyTitleFont, rTitle, &sfLeft, &brPrimary);
+        RectF rSub(ix, 33.0f * s, iw, 14.0f * s);
+        graphics.DrawString(L"Widget colour preset", -1, &flySubFont, rSub, &sfLeft, &brSub);
+
+        // ── Divider ──
+        Pen divPen(g_isLightTheme ? Color(25, 0, 0, 0) : Color(40, 255, 255, 255), 1.0f * s);
+        graphics.DrawLine(&divPen, ix, 52.0f * s, (cardX + cardW - 14.0f) * s, 52.0f * s);
+
+        // ── Swatches (4 cols × 2 rows = 8 presets) ──
+        struct SwatchDef { int preset; const wchar_t* label; BYTE r, g, b; bool isClear; bool isCustom; };
+        SwatchDef sw[8] = {
+            { 0, L"Clear",  0,   0,   0,   true,  false },
+            { 2, L"Dark",   31,  31,  31,  false, false },
+            { 3, L"Light",  230, 230, 230, false, false },
+            { 4, L"Black",  0,   0,   0,   false, false },
+            { 5, L"White",  255, 255, 255, false, false },
+            { 6, L"Red",    180, 40,  40,  false, false },
+            { 7, L"Blue",   30,  110, 200, false, false },
+            { 1, L"Custom", 0,   0,   0,   false, true  },
+        };
+
+        float swSz   = 36.0f * s;
+        float swGapX =  6.0f * s;
+        float swGapY =  8.0f * s;
+        float swLblH = 13.0f * s;
+        float gridW  = 4.0f * swSz + 3.0f * swGapX;
+        float gridX  = cx + (cw - gridW) / 2.0f;
+        float gridY  = 59.0f * s;
+
+        for (int i = 0; i < 8; i++) {
+            int   col = i % 4,  row = i / 4;
+            float sx  = gridX + col * (swSz + swGapX);
+            float sy  = gridY + row * (swSz + swLblH + swGapY);
+
+            bool isActive = (g_bgPresetMode == sw[i].preset);
+            bool isHov    = (g_bgFlyoutHover == i);
+
+            // Rounded swatch path
+            GraphicsPath swPath;
+            float sr = 7.0f * s, sd = sr * 2.0f;
+            swPath.AddArc(sx, sy, sd, sd, 180, 90);
+            swPath.AddArc(sx + swSz - sd, sy, sd, sd, 270, 90);
+            swPath.AddArc(sx + swSz - sd, sy + swSz - sd, sd, sd, 0, 90);
+            swPath.AddArc(sx, sy + swSz - sd, sd, sd, 90, 90);
+            swPath.CloseFigure();
+
+            if (sw[i].isClear) {
+                // Checkered "no colour" pattern
+                SolidBrush chA(Color(255, 200, 200, 200)), chB(Color(255, 155, 155, 155));
+                int cells = 4;
+                float csz = swSz / cells;
+                for (int ci = 0; ci < cells; ci++)
+                    for (int cj = 0; cj < cells; cj++) {
+                        SolidBrush& cb = ((ci + cj) % 2 == 0) ? chA : chB;
+                        graphics.FillRectangle(&cb, sx + ci * csz, sy + cj * csz, csz, csz);
+                    }
+                // Slash line
+                Pen slashPen(Color(180, 200, 60, 60), 2.0f * s);
+                graphics.DrawLine(&slashPen, sx + 4.0f * s, sy + swSz - 4.0f * s,
+                                             sx + swSz - 4.0f * s, sy + 4.0f * s);
+            } else if (sw[i].isCustom) {
+                BYTE cr2 = GetRValue(g_bgColorRGB), cg2 = GetGValue(g_bgColorRGB), cb2 = GetBValue(g_bgColorRGB);
+                SolidBrush custBr(Color(255, cr2, cg2, cb2));
+                graphics.FillPath(&custBr, &swPath);
+                // "…" overlay
+                Font dotFont(&ffam, 14.0f * s, FontStyleBold, UnitPixel);
+                SolidBrush dotBr(Color(200, 255, 255, 255));
+                RectF dotR(sx, sy, swSz, swSz);
+                graphics.DrawString(L"\u2026", -1, &dotFont, dotR, &sfCtr, &dotBr);
+            } else {
+                SolidBrush swBr(Color(255, sw[i].r, sw[i].g, sw[i].b));
+                graphics.FillPath(&swBr, &swPath);
+            }
+
+            // Border — active = red ring, hovered = subtle, normal = faint
+            if (isActive) {
+                Pen ringPen(Color(255, 220, 38, 38), 2.5f * s);
+                graphics.DrawPath(&ringPen, &swPath);
+            } else if (isHov) {
+                Pen hovPen(g_isLightTheme ? Color(140, 0, 0, 0) : Color(160, 255, 255, 255), 1.5f * s);
+                graphics.DrawPath(&hovPen, &swPath);
+            } else {
+                Pen normPen(g_isLightTheme ? Color(40, 0, 0, 0) : Color(55, 255, 255, 255), 1.0f * s);
+                graphics.DrawPath(&normPen, &swPath);
+            }
+
+            // Label
+            SolidBrush lblBr(isActive ? Color(255, 220, 38, 38) :
+                (g_isLightTheme ? Color(170, 60, 60, 60) : Color(170, 170, 170, 175)));
+            RectF lblR(sx, sy + swSz + 1.0f * s, swSz, swLblH);
+            graphics.DrawString(sw[i].label, -1, &swLblFont, lblR, &sfCtr, &lblBr);
+        }
+
+        // ── Opacity Slider ──
+        // Section starts after 2 rows of swatches
+        float slSecY  = gridY + 2.0f * (swSz + swLblH + swGapY) + 6.0f * s;
+        float slX     = ix;
+        float slW     = iw;
+        float trackY  = slSecY + 18.0f * s;
+        float trackH  = 4.0f * s;
+        float knobSz  = 13.0f * s;
+        BYTE  slAlpha = (g_bgPresetMode == 0) ? 55 : 200;
+
+        // Opacity label + percentage
+        wchar_t opLbl[24];
+        int pct = (g_bgPresetMode == 0) ? 0 : (int)(g_bgOpacity * 100 / 255);
+        swprintf(opLbl, 24, L"Opacity  %d%%", pct);
+        SolidBrush slLblBr(Color(slAlpha + 55, g_isLightTheme ? 40 : 180, g_isLightTheme ? 40 : 180, g_isLightTheme ? 40 : 185));
+        RectF slLblR(slX, slSecY, slW, 16.0f * s);
+        graphics.DrawString(opLbl, -1, &sldrLblFont, slLblR, &sfLeft, &slLblBr);
+
+        // Track
+        SolidBrush trackBg(g_isLightTheme ? Color(slAlpha, 180, 180, 185) : Color(slAlpha, 70, 70, 80));
+        RectF trackR(slX, trackY, slW, trackH);
+        graphics.FillRectangle(&trackBg, trackR);
+
+        // Fill
+        if (g_bgPresetMode != 0 && g_bgOpacity > 0) {
+            float fillW = slW * (float)g_bgOpacity / 255.0f;
+            SolidBrush fillBr(Color(220, 220, 38, 38));
+            graphics.FillRectangle(&fillBr, slX, trackY, fillW, trackH);
+        }
+
+        // Knob
+        if (g_bgPresetMode != 0) {
+            float knobX = slX + slW * (float)g_bgOpacity / 255.0f - knobSz / 2.0f;
+            if (knobX < slX) knobX = slX;
+            if (knobX + knobSz > slX + slW) knobX = slX + slW - knobSz;
+            float knobY = trackY + trackH / 2.0f - knobSz / 2.0f;
+            SolidBrush knobBr(Color(255, 255, 255, 255));
+            graphics.FillEllipse(&knobBr, knobX, knobY, knobSz, knobSz);
+            Pen knobBd(Color(80, 0, 0, 0), 1.0f * s);
+            graphics.DrawEllipse(&knobBd, knobX, knobY, knobSz, knobSz);
+        }
+
+        // ── Footer ──
+        Font footFont(&ffam, 8.5f * s, FontStyleRegular, UnitPixel);
+        SolidBrush footBr(g_isLightTheme ? Color(90, 80, 80, 80) : Color(90, 160, 160, 170));
+        RectF footR(cx + 8.0f * s, 243.0f * s, cw - 16.0f * s, 14.0f * s);
+        graphics.DrawString(L"Tap swatch to apply instantly", -1, &footFont, footR, &sfCtr, &footBr);
+    }
+
     // Apply per-pixel alpha channel to OS Window
-    POINT ptDst = { g_menuXPos, g_menuYPos };
+    // When flyout is open, make sure the extended window doesn't overflow the right edge.
+    // When flyout is closed, restore the menu to its original (base) position.
+    POINT ptDst = { g_menuBaseXPos, g_menuYPos };
+    if (g_bgFlyoutOpen) {
+        HMONITOR hMon = MonitorFromPoint(ptDst, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = { sizeof(mi) };
+        GetMonitorInfo(hMon, &mi);
+        if (ptDst.x + rawWidth > mi.rcWork.right - (int)(6 * s)) {
+            ptDst.x = mi.rcWork.right - rawWidth - (int)(6 * s);
+            if (ptDst.x < mi.rcWork.left) ptDst.x = mi.rcWork.left;
+        }
+    }
+    g_menuXPos = ptDst.x;   // keep in sync with actual window position for hit-testing
     SIZE sizeDst = { rawWidth, rawHeight };
     POINT ptSrc = { 0, 0 };
     BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
@@ -2720,43 +4825,177 @@ LRESULT CALLBACK CustomMenuWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         int localY = pt.y - g_menuYPos;
 
         float s = g_dpiScale;
-        int newHover = -1;
 
+        // If slider is being dragged, update opacity live
+        if (g_bgSliderDrag && g_bgPresetMode != 0) {
+            float slX = (385.0f + 12.0f + 14.0f) * s;
+            float slW = (200.0f - 28.0f) * s;
+            float frac = ((float)localX - slX) / slW;
+            if (frac < 0.0f) frac = 0.0f;
+            if (frac > 1.0f) frac = 1.0f;
+            g_bgOpacity = (int)(frac * 255.0f);
+            SaveConfig();
+            RenderWidget(g_hWnd);
+            RenderCustomMenu(hWnd);
+            break;
+        }
+
+        // Menu card hover (left/right columns)
+        int newHover = -1;
+        bool showZIndexOption = (!g_isOnTaskbar && !g_setupMode);
         if (localX >= (int)(14 * s) && localX <= (int)(168 * s)) {
-            if (localY >= (int)(48 * s) && localY < (int)(108 * s)) newHover = 0;
-            else if (localY >= (int)(108 * s) && localY < (int)(168 * s)) newHover = 1;
-            else if (localY >= (int)(168 * s) && localY <= (int)(228 * s)) newHover = 2;
+            if (showZIndexOption) {
+                if      (localY >= (int)(46 * s)  && localY < (int)(95 * s))  newHover = 0;
+                else if (localY >= (int)(95 * s)  && localY < (int)(144 * s)) newHover = 1;
+                else if (localY >= (int)(144 * s) && localY < (int)(193 * s)) newHover = 2;
+                else if (localY >= (int)(193 * s) && localY <= (int)(244 * s)) newHover = 8;
+            } else {
+                if      (localY >= (int)(48 * s)  && localY < (int)(108 * s)) newHover = 0;
+                else if (localY >= (int)(108 * s) && localY < (int)(168 * s)) newHover = 1;
+                else if (localY >= (int)(168 * s) && localY <= (int)(228 * s)) newHover = 2;
+            }
         } else if (localX >= (int)(176 * s) && localX <= (int)(375 * s)) {
-            if (localY >= (int)(48 * s) && localY < (int)(84 * s)) newHover = 3;
-            else if (localY >= (int)(88 * s) && localY < (int)(124 * s)) newHover = 4;
+            if      (localY >= (int)(48 * s)  && localY < (int)(84 * s))  newHover = 3;
+            else if (localY >= (int)(88 * s)  && localY < (int)(124 * s)) newHover = 4;
             else if (localY >= (int)(128 * s) && localY < (int)(164 * s)) newHover = 5;
             else if (localY >= (int)(168 * s) && localY < (int)(204 * s)) newHover = 6;
             else if (localY >= (int)(208 * s) && localY <= (int)(244 * s)) newHover = 7;
         }
-
         if (newHover != g_menuHoverIndex) {
             g_menuHoverIndex = newHover;
             RenderCustomMenu(hWnd);
         }
+
+        // Flyout swatch hover
+        if (g_bgFlyoutOpen) {
+            float cx    = (385.0f + 12.0f) * s;
+            float cw    = 200.0f * s;
+            float swSz  = 36.0f * s, swGapX = 6.0f * s, swGapY = 8.0f * s, swLblH = 13.0f * s;
+            float gridW = 4.0f * swSz + 3.0f * swGapX;
+            float gridX = cx + (cw - gridW) / 2.0f;
+            float gridY = 59.0f * s;
+
+            // Slider hit zone
+            float slSecY = gridY + 2.0f * (swSz + swLblH + swGapY) + 6.0f * s;
+            float trackY = slSecY + 18.0f * s;
+            float slX    = (385.0f + 12.0f + 14.0f) * s;
+            float slW    = (200.0f - 28.0f) * s;
+
+            int newFlyHov = -1;
+            for (int i = 0; i < 8; i++) {
+                float sx = gridX + (i % 4) * (swSz + swGapX);
+                float sy = gridY + (i / 4) * (swSz + swLblH + swGapY);
+                if (localX >= (int)sx && localX <= (int)(sx + swSz) &&
+                    localY >= (int)sy && localY <= (int)(sy + swSz)) {
+                    newFlyHov = i; break;
+                }
+            }
+            if (newFlyHov == -1 &&
+                localX >= (int)slX && localX <= (int)(slX + slW) &&
+                localY >= (int)(trackY - 8.0f * s) && localY <= (int)(trackY + 12.0f * s)) {
+                newFlyHov = 8;
+            }
+            if (newFlyHov != g_bgFlyoutHover) {
+                g_bgFlyoutHover = newFlyHov;
+                RenderCustomMenu(hWnd);
+            }
+        }
         break;
     }
 
+    case WM_LBUTTONDOWN: {
+        if (g_bgFlyoutOpen && g_bgPresetMode != 0) {
+            POINT pt2; GetCursorPos(&pt2);
+            int lx = pt2.x - g_menuXPos;
+            int ly = pt2.y - g_menuYPos;
+            float s2 = g_dpiScale;
+            float swSz = 36.0f * s2, swGapX = 6.0f * s2, swGapY = 8.0f * s2, swLblH = 13.0f * s2;
+            float gridY = 59.0f * s2;
+            float slSecY = gridY + 2.0f * (swSz + swLblH + swGapY) + 6.0f * s2;
+            float trackY = slSecY + 18.0f * s2;
+            float slX    = (385.0f + 12.0f + 14.0f) * s2;
+            float slW    = (200.0f - 28.0f) * s2;
+            if (lx >= (int)slX && lx <= (int)(slX + slW) &&
+                ly >= (int)(trackY - 8.0f * s2) && ly <= (int)(trackY + 12.0f * s2)) {
+                g_bgSliderDrag = true;
+                SetCapture(hWnd);
+                float frac = ((float)lx - slX) / slW;
+                if (frac < 0.0f) frac = 0.0f;
+                if (frac > 1.0f) frac = 1.0f;
+                g_bgOpacity = (int)(frac * 255.0f);
+                SaveConfig();
+                RenderWidget(g_hWnd);
+                RenderCustomMenu(hWnd);
+            }
+        }
+        break;
+    }
+
+
     case WM_LBUTTONUP: {
+        // Stop slider drag
+        if (g_bgSliderDrag) {
+            g_bgSliderDrag = false;
+            ReleaseCapture();
+            break;
+        }
+
         POINT pt;
         GetCursorPos(&pt);
         int localX = pt.x - g_menuXPos;
         int localY = pt.y - g_menuYPos;
-
         float s = g_dpiScale;
-        int clicked = -1;
 
+        // ── Flyout swatch clicks — only when click is INSIDE the flyout area ──
+        if (g_bgFlyoutOpen && localX >= (int)(385.0f * s)) {
+            float cx    = (385.0f + 12.0f) * s;
+            float cw    = 200.0f * s;
+            float swSz  = 36.0f * s, swGapX = 6.0f * s, swGapY = 8.0f * s, swLblH = 13.0f * s;
+            float gridW = 4.0f * swSz + 3.0f * swGapX;
+            float gridX = cx + (cw - gridW) / 2.0f;
+            float gridY = 59.0f * s;
+            int   swPresets[8] = { 0, 2, 3, 4, 5, 6, 7, 1 };
+            bool  swCustom [8] = { false,false,false,false,false,false,false,true };
+
+            for (int i = 0; i < 8; i++) {
+                float sx = gridX + (i % 4) * (swSz + swGapX);
+                float sy = gridY + (i / 4) * (swSz + swLblH + swGapY);
+                if (localX >= (int)sx && localX <= (int)(sx + swSz) &&
+                    localY >= (int)sy && localY <= (int)(sy + swSz)) {
+                    if (swCustom[i]) {
+                        g_bgFlyoutOpen = false;
+                        HideCustomMenu();
+                        PickCustomBackgroundColor(g_hWnd);
+                    } else {
+                        g_bgPresetMode = swPresets[i];
+                        SaveConfig();
+                        RenderWidget(g_hWnd);
+                        RenderCustomMenu(hWnd);
+                    }
+                    break;
+                }
+            }
+            break;  // click was in flyout zone — don't process menu card
+        }
+        // Click was on the menu card (or gap) — fall through to menu card handling below
+
+        // ── Menu card clicks ──────────────────────────────────────────────────
+        int clicked = -1;
+        bool showZIndexOption = (!g_isOnTaskbar && !g_setupMode);
         if (localX >= (int)(14 * s) && localX <= (int)(168 * s)) {
-            if (localY >= (int)(48 * s) && localY < (int)(108 * s)) clicked = 0;
-            else if (localY >= (int)(108 * s) && localY < (int)(168 * s)) clicked = 1;
-            else if (localY >= (int)(168 * s) && localY <= (int)(228 * s)) clicked = 2;
+            if (showZIndexOption) {
+                if      (localY >= (int)(46 * s)  && localY < (int)(95 * s))  clicked = 0;
+                else if (localY >= (int)(95 * s)  && localY < (int)(144 * s)) clicked = 1;
+                else if (localY >= (int)(144 * s) && localY < (int)(193 * s)) clicked = 2;
+                else if (localY >= (int)(193 * s) && localY <= (int)(244 * s)) clicked = 8;
+            } else {
+                if      (localY >= (int)(48 * s)  && localY < (int)(108 * s)) clicked = 0;
+                else if (localY >= (int)(108 * s) && localY < (int)(168 * s)) clicked = 1;
+                else if (localY >= (int)(168 * s) && localY <= (int)(228 * s)) clicked = 2;
+            }
         } else if (localX >= (int)(176 * s) && localX <= (int)(375 * s)) {
-            if (localY >= (int)(48 * s) && localY < (int)(84 * s)) clicked = 3;
-            else if (localY >= (int)(88 * s) && localY < (int)(124 * s)) clicked = 4;
+            if      (localY >= (int)(48 * s)  && localY < (int)(84 * s))  clicked = 3;
+            else if (localY >= (int)(88 * s)  && localY < (int)(124 * s)) clicked = 4;
             else if (localY >= (int)(128 * s) && localY < (int)(164 * s)) clicked = 5;
             else if (localY >= (int)(168 * s) && localY < (int)(204 * s)) clicked = 6;
             else if (localY >= (int)(208 * s) && localY <= (int)(244 * s)) clicked = 7;
@@ -2778,12 +5017,20 @@ LRESULT CALLBACK CustomMenuWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
             SaveConfig();
             RenderWidget(g_hWnd);
             RenderCustomMenu(hWnd);
+        } else if (clicked == 8) {
+            g_zIndexDesktop = !g_zIndexDesktop;
+            UpdateWidgetMode();
+            SaveConfig();
+            RenderWidget(g_hWnd);
+            RenderCustomMenu(hWnd);
         } else if (clicked == 3) {
             HideCustomMenu();
             ShowCalendar(g_hWnd);
         } else if (clicked == 4) {
-            HideCustomMenu();
-            PickCustomBackgroundColor(g_hWnd);
+            // Toggle BG colour flyout (does NOT close the menu)
+            g_bgFlyoutOpen  = !g_bgFlyoutOpen;
+            g_bgFlyoutHover = -1;
+            RenderCustomMenu(hWnd);
         } else if (clicked == 5) {
             HideCustomMenu();
             HANDLE hThread = CreateThread(NULL, 0, CheckForUpdateThread, (LPVOID)TRUE, 0, NULL);
@@ -2883,10 +5130,14 @@ void ShowCustomMenu(HWND hWndOwner, POINT pt) {
         x = mi.rcWork.left + (int)(10 * s);
     }
 
-    g_menuXPos = x;
+    g_menuXPos     = x;
+    g_menuBaseXPos = x;   // remember original position for flyout restore
     g_menuYPos = y;
     g_menuHoverIndex = -1;
-    g_isMenuOpen = true;
+    g_bgFlyoutOpen   = false;
+    g_bgFlyoutHover  = -1;
+    g_bgSliderDrag   = false;
+    g_isMenuOpen     = true;
 
     SetWindowPos(g_hMenuWnd, HWND_TOPMOST, g_menuXPos, g_menuYPos, menuW, menuH, SWP_NOACTIVATE);
     RenderCustomMenu(g_hMenuWnd);
@@ -3460,6 +5711,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_TIMER:
         if (wParam == 1) {
             RenderWidget(hWnd);
+            CheckPendingReminders();
 
             // Auto-recovery: periodically retry fetching holidays in background when offline
             if (g_holidayFetchState == FETCH_ERROR_OFFLINE && !g_isHolidayFetchInProgress) {
@@ -3473,8 +5725,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         } else if (wParam == 2) {
             // ── Click-outside-to-close for calendar ──
             if (g_isCalendarOpen && g_hCalWnd) {
-                // Ignore clicks during initial opening grace period (300ms)
-                if (GetTickCount() - g_calAnimStartTime > 300) {
+                // Ignore clicks if reminder dashboard or alarm alert is open
+                if (g_isReminderDashboardOpen || g_isAlarmAlertOpen) {
+                    // Do not close calendar while user is interacting with reminder or alarm
+                } else if (GetTickCount() - g_calAnimStartTime > 300) {
                     if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) ||
                         (GetAsyncKeyState(VK_RBUTTON) & 0x8000) ||
                         (GetAsyncKeyState(VK_MBUTTON) & 0x8000)) {
@@ -3484,6 +5738,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         GetWindowRect(hWnd, &rcWidget);
                         // Close if click is outside both the calendar cards and the widget
                         if (!IsPointInCalendar(cursor) && !PtInRect(&rcWidget, cursor)) {
+                            if (g_isDatePopupOpen) CloseCalendarDatePopup();
                             HideCalendar();
                         }
                     }
@@ -3571,9 +5826,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // ── Z-Order Management & Taskbar Sync (50ms responsive check) ──
             static DWORD s_lastZCheckTime = 0;
             if (!shouldHideFullscreen && !g_hiddenForTaskbar && !g_isMenuOpen && !g_isCalendarOpen) {
-                if (g_setupMode || g_isOnTaskbar) {
+                bool keepOnTop = (g_setupMode || g_isOnTaskbar || g_zIndexDesktop);
+                if (keepOnTop) {
                     bool needZOrderUpdate = (nowTicks - s_lastZCheckTime >= 50);
-                    if (!needZOrderUpdate) {
+                    if (!needZOrderUpdate && g_isOnTaskbar) {
                         HWND hTaskbar = FindWindowW(L"Shell_TrayWnd", NULL);
                         if (hTaskbar) {
                             HWND hPrev = GetWindow(hWnd, GW_HWNDPREV);
@@ -3634,7 +5890,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (!g_hiddenForFullscreen && !g_hiddenForTaskbar) {
             if (IsIconic(hWnd)) ShowWindow(hWnd, SW_RESTORE);
             ShowWindow(hWnd, SW_SHOWNOACTIVATE);
-            if (g_setupMode || g_isOnTaskbar) {
+            bool keepOnTop = (g_setupMode || g_isOnTaskbar || g_zIndexDesktop);
+            if (keepOnTop) {
+                if (g_isOnTaskbar) {
+                    HWND hTaskbar = FindWindowW(L"Shell_TrayWnd", NULL);
+                    if (hTaskbar && (HWND)GetWindowLongPtr(hWnd, GWLP_HWNDPARENT) != hTaskbar) {
+                        SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, (LONG_PTR)hTaskbar);
+                    }
+                } else {
+                    if ((HWND)GetWindowLongPtr(hWnd, GWLP_HWNDPARENT) != NULL) {
+                        SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, 0);
+                    }
+                }
                 SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0,
                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
             } else {
@@ -3809,6 +6076,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ReleaseDC(NULL, hdc);
 
     LoadConfig();
+    LoadReminders();
 
     // Detect initial Windows theme
     g_isLightTheme = DetectWindowsTheme();
@@ -3879,7 +6147,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         L"NepaliCalendarPopupClass",
         L"Nepali Calendar",
         WS_POPUP,
-        0, 0, (int)(420 * g_dpiScale), (int)(440 * g_dpiScale),
+        0, 0, (int)(420 * g_dpiScale), (int)(468 * g_dpiScale),
         NULL, NULL, hInstance, NULL
     );
 
@@ -3929,6 +6197,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         DestroyWindow(g_hMenuWnd);
         g_hMenuWnd = NULL;
     }
+    if (g_hReminderWnd) {
+        DestroyWindow(g_hReminderWnd);
+        g_hReminderWnd = NULL;
+    }
+    if (g_hAlarmAlertWnd) {
+        DestroyWindow(g_hAlarmAlertWnd);
+        g_hAlarmAlertWnd = NULL;
+    }
+    if (g_hDatePopupWnd) {
+        DestroyWindow(g_hDatePopupWnd);
+        g_hDatePopupWnd = NULL;
+    }
+    StopAlarmSound();
 
     GdiplusShutdown(g_gdiplusToken);
 

@@ -28,6 +28,7 @@
 - **Zero-Distraction Design:** Frameless, borderless, and perfectly transparent with high-quality GDI+ per-pixel alpha blending.
 - **Smart Auto-Hide:** Automatically detects when you're playing games or watching movies in fullscreen and hides itself so it doesn't get in your way.
 - **DPI Aware:** Renders crystal-clear text and graphics on high-resolution (4K) monitors without blurriness.
+- **Desktop Z-Index Control:** When locked to the desktop, toggle the **Z-Index** option in the context menu to choose whether Tithify stays in front of open applications (Always on Top) or rests behind them on the desktop wallpaper.
 - **Professional Installer:** Comes with a standard Windows Installer (`Setup.exe`) for easy installation, Start Menu shortcuts, and clean uninstalls (no Admin privileges required).
 - **System Tray Icon:** Accessible from the system tray with a right-click context menu for quick access to all settings.
 
@@ -83,7 +84,7 @@ Tithify is 100% free and open-source. If you find it helpful for your daily work
 
 ## ⚡ Ultra-Efficient Resource Management
 
-This widget is engineered from the ground up to consume absolutely minimal system resources (essentially 0.00% CPU usage and a tiny RAM footprint).
+This widget is engineered from the ground up to consume minimal system resources (~0.01% CPU usage and <5MB RAM).
 
 **How it achieves this:**
 Instead of constantly running complex date conversion algorithms, the widget uses an ultra-efficient caching technique:
@@ -136,7 +137,7 @@ winget install Aayush.Tithify
 > **Browser & Windows SmartScreen Warnings**
 > Because this is a free open-source project without a paid EV code-signing certificate, your web browser or Windows SmartScreen might initially show a warning for new releases. You can safely bypass it by clicking **Keep -> Keep anyway** in your browser, and **More Info -> Run Anyway** in Windows.
 
-1. Download **`Tithify_v3.6.3.zip`** or `Tithify_Setup.exe` from the [Latest Release](https://github.com/aayushlbef/Tithify/releases/latest).
+1. Download **`Tithify_v3.6.4.zip`** or `Tithify_Setup.exe` from the [Latest Release](https://github.com/aayushlbef/Tithify/releases/latest).
 2. Run `Tithify_Setup.exe` to install.
 
 ---
@@ -146,7 +147,7 @@ winget install Aayush.Tithify
 1. **Positioning:** Right-click the widget to unlock its position and drag it to your preferred spot on your screen / taskbar.
 2. **Locking:** Right-click again and select **"Lock Position"** to make it click-through and seamless!
 3. **Open Calendar:** **Left-click** the widget at any time to open the **interactive Bikram Sambat Calendar**.
-4. **Settings:** Right-click to configure **Run at Startup**, toggle **Show Day of Week**, switch themes, or check for updates.
+4. **Settings:** Right-click to configure **Run at Startup**, toggle **Show Day of Week**, toggle **Z-Index** (when locked to desktop), switch themes, or check for updates.
 
 ---
 
